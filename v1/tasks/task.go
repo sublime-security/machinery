@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
+	"time"
 
 	opentracing "github.com/opentracing/opentracing-go"
 	opentracing_ext "github.com/opentracing/opentracing-go/ext"
@@ -141,6 +142,15 @@ func (t *Task) Call() (taskResults []*TaskResult, err error) {
 
 	// Invoke the task
 	results := t.TaskFunc.Call(args)
+	signature := SignatureFromContext(t.Context)
+	recordTimeSinceIngestion := func(name string) {
+		if signature.IngestionTime != nil {
+			span.SetTag(
+				name,
+				time.Now().Sub(*signature.IngestionTime).Microseconds())
+		}
+	}
+	recordTimeSinceIngestion("ingestion_to_processed")
 
 	// Task must return at least a value
 	if len(results) == 0 {
@@ -154,6 +164,8 @@ func (t *Task) Call() (taskResults []*TaskResult, err error) {
 	// is not the case, return error message, otherwise propagate the task error
 	// to the caller
 	if !lastResult.IsNil() {
+		recordTimeSinceIngestion("ingestion_to_err")
+
 		// If the result implements Retriable interface, return instance of Retriable
 		retriableErrorInterface := reflect.TypeOf((*Retriable)(nil)).Elem()
 		if lastResult.Type().Implements(retriableErrorInterface) {
@@ -173,6 +185,8 @@ func (t *Task) Call() (taskResults []*TaskResult, err error) {
 		// Return the standard error
 		return nil, lastResult.Interface().(error)
 	}
+
+	recordTimeSinceIngestion("ingestion_to_success")
 
 	// Convert reflect values to task results
 	taskResults = make([]*TaskResult, len(results)-1)

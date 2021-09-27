@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -213,6 +214,14 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 	}
 	if delivery.Messages[0].ReceiptHandle != nil {
 		sig.SQSReceiptHandle = *delivery.Messages[0].ReceiptHandle
+	}
+
+	sentTimeSinceEpochMilliString := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameSentTimestamp]
+	if sentTimeSinceEpochMilliString != nil {
+		if i, err := strconv.ParseInt(*sentTimeSinceEpochMilliString, 10, 64); err == nil {
+			t := time.UnixMilli(i)
+			sig.IngestionTime = &t
+		}
 	}
 
 	// If the task is not registered return an error
