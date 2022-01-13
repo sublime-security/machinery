@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/opentracing/opentracing-go"
-	
+
 	"github.com/RichardKnop/machinery/v1/backends/amqp"
 	"github.com/RichardKnop/machinery/v1/brokers/errs"
 	"github.com/RichardKnop/machinery/v1/log"
@@ -22,11 +22,14 @@ import (
 
 // Worker represents a single worker process
 type Worker struct {
-	server            *Server
-	ConsumerTag       string
-	Concurrency       int
-	Queue             string
-	errorHandler      func(err error)
+	server      *Server
+	ConsumerTag string
+	Concurrency int
+	Queue       string
+	// errorHandler triggers on ALL errors, including boot, consume, etc.
+	errorHandler func(err error)
+	// taskErrorHandler only triggers when a task returns an error
+	taskErrorHandler  func(err error, signature *tasks.Signature)
 	preTaskHandler    func(*tasks.Signature)
 	postTaskHandler   func(*tasks.Signature)
 	preConsumeHandler func(*Worker) bool
@@ -364,7 +367,9 @@ func (worker *Worker) taskFailed(signature *tasks.Signature, taskErr error) erro
 		return fmt.Errorf("Set state to 'failure' for task %s returned error: %s", signature.UUID, err)
 	}
 
-	if worker.errorHandler != nil {
+	if worker.taskErrorHandler != nil {
+		worker.taskErrorHandler(taskErr, signature)
+	} else if worker.errorHandler != nil {
 		worker.errorHandler(taskErr)
 	} else {
 		log.ERROR.Printf("Failed processing task %s. Error = %v", signature.UUID, taskErr)
@@ -394,10 +399,17 @@ func (worker *Worker) hasAMQPBackend() bool {
 	return ok
 }
 
-// SetErrorHandler sets a custom error handler for task errors
+// SetErrorHandler sets a custom error handler for worker errors
+// Note: errorHandler will NOT be called if taskErrorHandler is set
 // A default behavior is just to log the error after all the retry attempts fail
 func (worker *Worker) SetErrorHandler(handler func(err error)) {
 	worker.errorHandler = handler
+}
+
+// SetTaskErrorHandler sets a custom error handler for task-only errors
+// Note: taskErrorHandler will override errorHandler for task errors when set.
+func (worker *Worker) SetTaskErrorHandler(handler func(err error, signature *tasks.Signature)) {
+	worker.taskErrorHandler = handler
 }
 
 //SetPreTaskHandler sets a custom handler func before a job is started
