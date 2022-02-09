@@ -92,12 +92,16 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcess
 					deliveries <- output
 
 				} else {
+					if err != nil {
+						log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
+
+						// Avoid repeating this
+						if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
+							time.Sleep(30 * time.Second)
+						}
+					}
 					//return back to pool right away
 					pool <- struct{}{}
-					if err != nil {
-						log.ERROR.Printf("Queue consume error: %s", err)
-					}
-
 				}
 			}
 
