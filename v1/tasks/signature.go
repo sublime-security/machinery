@@ -2,8 +2,9 @@ package tasks
 
 import (
 	"fmt"
-	"github.com/RichardKnop/machinery/v1/utils"
 	"time"
+
+	"github.com/RichardKnop/machinery/v1/utils"
 
 	"github.com/google/uuid"
 )
@@ -57,6 +58,7 @@ type Signature struct {
 	Immutable      bool
 	RetryCount     int
 	RetryTimeout   int
+	SplitSpan      bool
 	OnSuccess      []*Signature
 	OnError        []*Signature
 	ChordCallback  *Signature

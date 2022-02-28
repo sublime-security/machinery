@@ -208,6 +208,9 @@ func (server *Server) SendTaskWithContext(ctx context.Context, signature *tasks.
 		server.prePublishHandler(signature)
 	}
 
+	if signature.SplitSpan {
+		ctx = opentracing.ContextWithSpan(ctx, nil)
+	}
 	if err := server.broker.Publish(ctx, signature); err != nil {
 		return nil, fmt.Errorf("Publish message error: %s", err)
 	}
