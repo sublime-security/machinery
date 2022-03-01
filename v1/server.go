@@ -183,7 +183,9 @@ func (server *Server) SendTaskWithContext(ctx context.Context, signature *tasks.
 	defer span.Finish()
 
 	// tag the span with some info about the signature
-	signature.Headers = tracing.HeadersWithSpan(signature.Headers, span)
+	if !signature.SplitSpan {
+		signature.Headers = tracing.HeadersWithSpan(signature.Headers, span)
+	}
 
 	// Make sure result backend is defined
 	if server.backend == nil {
@@ -208,9 +210,6 @@ func (server *Server) SendTaskWithContext(ctx context.Context, signature *tasks.
 		server.prePublishHandler(signature)
 	}
 
-	if signature.SplitSpan {
-		ctx = opentracing.ContextWithSpan(ctx, nil)
-	}
 	if err := server.broker.Publish(ctx, signature); err != nil {
 		return nil, fmt.Errorf("Publish message error: %s", err)
 	}
