@@ -163,6 +163,12 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 	return nil
 }
 
+func (b *Broker) extend(time.Duration, *tasks.Signature) error {
+	// It appears GCP PubSub does behave like SQS with an "ack timeout". However, the signature might
+	// not contain the necessary ID to extend it, there just isn't motivation to implement at the moment.
+	return fmt.Errorf("GCP Pub Sub does not support extending ack deadline")
+}
+
 // consumeOne processes a single message using TaskProcessor
 func (b *Broker) consumeOne(delivery *pubsub.Message, taskProcessor iface.TaskProcessor) {
 	if len(delivery.Data) == 0 {
@@ -185,7 +191,7 @@ func (b *Broker) consumeOne(delivery *pubsub.Message, taskProcessor iface.TaskPr
 		log.ERROR.Printf("task %s is not registered", sig.Name)
 	}
 
-	err := taskProcessor.Process(sig)
+	err := taskProcessor.Process(sig, b.extend)
 	if err != nil {
 		delivery.Nack()
 		log.ERROR.Printf("Failed process of task", err)

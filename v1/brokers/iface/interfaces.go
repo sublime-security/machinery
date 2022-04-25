@@ -23,7 +23,7 @@ type Broker interface {
 // TaskProcessor - can process a delivered task
 // This will probably always be a worker instance
 type TaskProcessor interface {
-	Process(signature *tasks.Signature) error
+	Process(signature *tasks.Signature, extendFunc tasks.ExtendForSignatureFunc) error
 	CustomQueue() string
 	PreConsumeHandler() bool
 }

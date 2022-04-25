@@ -120,7 +120,7 @@ func TestTaskCallWithSignatureInContext(t *testing.T) {
 	}
 	signature, err := tasks.NewSignature("foo", []tasks.Arg{})
 	assert.NoError(t, err)
-	task, err := tasks.NewWithSignature(f, signature)
+	task, err := tasks.NewWithSignature(f, signature, func(time.Duration, *tasks.Signature) error { return nil })
 	assert.NoError(t, err)
 	taskResults, err := task.Call()
 	assert.NoError(t, err)

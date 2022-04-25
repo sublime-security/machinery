@@ -133,7 +133,7 @@ func (worker *Worker) Quit() {
 }
 
 // Process handles received tasks and triggers success/error callbacks
-func (worker *Worker) Process(signature *tasks.Signature) error {
+func (worker *Worker) Process(signature *tasks.Signature, extendFunc tasks.ExtendForSignatureFunc) error {
 	// If the task is not registered with this worker, do not continue
 	// but only return nil as we do not want to restart the worker process
 	if !worker.server.IsTaskRegistered(signature.Name) {
@@ -151,7 +151,7 @@ func (worker *Worker) Process(signature *tasks.Signature) error {
 	}
 
 	// Prepare task for processing
-	task, err := tasks.NewWithSignature(taskFunc, signature)
+	task, err := tasks.NewWithSignature(taskFunc, signature, extendFunc)
 	// if this failed, it means the task is malformed, probably has invalid
 	// signature, go directly to task failed without checking whether to retry
 	if err != nil {

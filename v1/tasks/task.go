@@ -27,9 +27,15 @@ type Task struct {
 	Args       []reflect.Value
 }
 
+type ExtendForSignatureFunc func(by time.Duration, signature *Signature) error
+
+type ExtendFunc func(time.Duration) error
+
 type signatureCtxType struct{}
+type extendFuncCtxType struct{}
 
 var signatureCtx signatureCtxType
+var extendFuncCtx extendFuncCtxType
 
 // SignatureFromContext gets the signature from the context
 func SignatureFromContext(ctx context.Context) *Signature {
@@ -46,11 +52,32 @@ func SignatureFromContext(ctx context.Context) *Signature {
 	return signature
 }
 
+// ExtendFuncFromContext gets the extend function from the context
+func ExtendFuncFromContext(ctx context.Context) ExtendFunc {
+	if ctx == nil {
+		return nil
+	}
+
+	v := ctx.Value(extendFuncCtx)
+	if v == nil {
+		return nil
+	}
+
+	ef, _ := v.(ExtendFunc)
+	return ef
+}
+
 // NewWithSignature is the same as New but injects the signature
-func NewWithSignature(taskFunc interface{}, signature *Signature) (*Task, error) {
+func NewWithSignature(taskFunc interface{}, signature *Signature, extendFunc ExtendForSignatureFunc) (*Task, error) {
 	args := signature.Args
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, signatureCtx, signature)
+
+	var ef ExtendFunc = func(by time.Duration) error {
+		return extendFunc(by, signature)
+	}
+	ctx = context.WithValue(ctx, extendFuncCtx, ef)
+
 	task := &Task{
 		TaskFunc: reflect.ValueOf(taskFunc),
 		Context:  ctx,
