@@ -182,6 +182,19 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 
 }
 
+func (b *Broker) extend(by time.Duration, signature *tasks.Signature) error {
+	b.AdjustRoutingKey(signature)
+
+	visibilityInput := &awssqs.ChangeMessageVisibilityInput{
+		QueueUrl:          aws.String(b.GetConfig().Broker + "/" + signature.RoutingKey),
+		ReceiptHandle:     &signature.SQSReceiptHandle,
+		VisibilityTimeout: aws.Int64(int64(by.Seconds())),
+	}
+
+	_, err := b.service.ChangeMessageVisibility(visibilityInput)
+	return err
+}
+
 // consume is a method which keeps consuming deliveries from a channel, until there is an error or a stop signal
 func (b *Broker) consume(deliveries <-chan *awssqs.ReceiveMessageOutput, concurrency int, taskProcessor iface.TaskProcessor, pool chan struct{}) error {
 
@@ -237,7 +250,7 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 		return fmt.Errorf("task %s is not registered", sig.Name)
 	}
 
-	err := taskProcessor.Process(sig)
+	err := taskProcessor.Process(sig, b.extend)
 	if err != nil {
 		// stop task deletion in case we want to send messages to dlq in sqs
 		if err == errs.ErrStopTaskDeletion {

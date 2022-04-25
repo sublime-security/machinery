@@ -204,6 +204,12 @@ func (b *BrokerGR) Publish(ctx context.Context, signature *tasks.Signature) erro
 	return err
 }
 
+func (b *BrokerGR) extend(time.Duration, *tasks.Signature) error {
+	// Tasks don't need to be extended with redis because messages won't become available again if they're not
+	// acked/deleted.
+	return nil
+}
+
 // GetPendingTasks returns a slice of task signatures waiting in the queue
 func (b *BrokerGR) GetPendingTasks(queue string) ([]*tasks.Signature, error) {
 
@@ -314,7 +320,7 @@ func (b *BrokerGR) consumeOne(delivery []byte, taskProcessor iface.TaskProcessor
 
 	log.DEBUG.Printf("Received new message: %s", delivery)
 
-	return taskProcessor.Process(signature)
+	return taskProcessor.Process(signature, b.extend)
 }
 
 // nextTask pops next available task from the default queue

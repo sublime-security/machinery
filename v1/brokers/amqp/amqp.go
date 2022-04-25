@@ -249,6 +249,11 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 	return fmt.Errorf("Failed delivery of delivery tag: %v", confirmed.DeliveryTag)
 }
 
+func (b *Broker) extend(time.Duration, *tasks.Signature) error {
+	// Unclear if extending is relevant to AMQP.
+	return fmt.Errorf("AMQP not support extending ack deadline")
+}
+
 // consume takes delivered messages from the channel and manages a worker pool
 // to process tasks concurrently
 func (b *Broker) consume(deliveries <-chan amqp.Delivery, concurrency int, taskProcessor iface.TaskProcessor, amqpCloseChan <-chan *amqp.Error) error {
@@ -333,7 +338,7 @@ func (b *Broker) consumeOne(delivery amqp.Delivery, taskProcessor iface.TaskProc
 
 	log.DEBUG.Printf("Received new message: %s", delivery.Body)
 
-	err := taskProcessor.Process(signature)
+	err := taskProcessor.Process(signature, b.extend)
 	if ack {
 		delivery.Ack(multiple)
 	}
@@ -439,7 +444,7 @@ type sigDumper struct {
 	Signatures  []*tasks.Signature
 }
 
-func (s *sigDumper) Process(sig *tasks.Signature) error {
+func (s *sigDumper) Process(sig *tasks.Signature, _ tasks.ExtendForSignatureFunc) error {
 	s.Signatures = append(s.Signatures, sig)
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/RichardKnop/machinery/v1/brokers/iface"
 	"github.com/RichardKnop/machinery/v1/common"
@@ -59,7 +60,12 @@ func (eagerBroker *Broker) Publish(ctx context.Context, task *tasks.Signature) e
 	}
 
 	// blocking call to the task directly
-	return eagerBroker.worker.Process(signature)
+	return eagerBroker.worker.Process(signature, eagerBroker.extend)
+}
+
+func (b *Broker) extend(time.Duration, *tasks.Signature) error {
+	// Unclear what this behavior should be -- consuming isn't supported.
+	return fmt.Errorf("eager broker does not support extending")
 }
 
 // AssignWorker assigns a worker to the eager broker
