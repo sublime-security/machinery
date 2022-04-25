@@ -24,7 +24,8 @@ import (
 )
 
 const (
-	maxAWSSQSDelay = time.Minute * 15 // Max supported SQS delay is 15 min: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_SendMessage.html
+	maxAWSSQSDelay             = time.Minute * 15 // Max supported SQS delay is 15 min: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_SendMessage.html
+	maxAWSSQSVisibilityTimeout = time.Hour * 12   // Max supported SQS visibility timeout is 12 hours: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ChangeMessageVisibility.html
 )
 
 // Broker represents a AWS SQS broker
@@ -195,6 +196,29 @@ func (b *Broker) extend(by time.Duration, signature *tasks.Signature) error {
 	return err
 }
 
+func (b *Broker) RetryMessage(signature *tasks.Signature) {
+	b.AdjustRoutingKey(signature)
+
+	delay := signature.ETA.Sub(time.Now().UTC())
+	if delay > maxAWSSQSVisibilityTimeout {
+		log.ERROR.Printf("attempted to retry a message with invalid delay: %s. using max.", delay.String())
+		delay = maxAWSSQSVisibilityTimeout
+	} else if delay < 0 {
+		delay = 0
+	}
+
+	visibilityInput := &awssqs.ChangeMessageVisibilityInput{
+		QueueUrl:          aws.String(b.GetConfig().Broker + "/" + signature.RoutingKey),
+		ReceiptHandle:     &signature.SQSReceiptHandle,
+		VisibilityTimeout: aws.Int64(int64(delay.Seconds())),
+	}
+
+	_, err := b.service.ChangeMessageVisibility(visibilityInput)
+	if err != nil {
+		log.ERROR.Printf("ignoring error attempting to change visibility timeout. will re-attempt after default period. task %s", signature.UUID)
+	}
+}
+
 // consume is a method which keeps consuming deliveries from a channel, until there is an error or a stop signal
 func (b *Broker) consume(deliveries <-chan *awssqs.ReceiveMessageOutput, concurrency int, taskProcessor iface.TaskProcessor, pool chan struct{}) error {
 
@@ -233,6 +257,18 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 		sig.SQSReceiptHandle = *delivery.Messages[0].ReceiptHandle
 	}
 
+	if receiveCount := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameApproximateReceiveCount]; receiveCount != nil {
+		if rc, err := strconv.ParseInt(*receiveCount, 10, 64); err == nil {
+			sqsRetryCount := int(rc) - 1
+
+			// RetryCount may already be part of the signature if using certain retry mechanisms. To avoid overwriting,
+			// just use whichever one is higher.
+			if sqsRetryCount > sig.RetryCount {
+				sig.RetryCount = sqsRetryCount
+			}
+		}
+	}
+
 	sentTimeSinceEpochMilliString := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameSentTimestamp]
 	if sentTimeSinceEpochMilliString != nil {
 		if i, err := strconv.ParseInt(*sentTimeSinceEpochMilliString, 10, 64); err == nil {
@@ -252,7 +288,7 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 
 	err := taskProcessor.Process(sig, b.extend)
 	if err != nil {
-		// stop task deletion in case we want to send messages to dlq in sqs
+		// stop task deletion in case we want to send messages to dlq in sqs or retry from visibility timeout
 		if err == errs.ErrStopTaskDeletion {
 			return nil
 		}

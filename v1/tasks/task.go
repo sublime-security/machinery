@@ -171,7 +171,7 @@ func (t *Task) Call() (taskResults []*TaskResult, err error) {
 	results := t.TaskFunc.Call(args)
 	signature := SignatureFromContext(t.Context)
 	recordTimeSinceIngestion := func(name string) {
-		if signature.IngestionTime != nil {
+		if signature != nil && signature.IngestionTime != nil {
 			span.SetTag(
 				name,
 				time.Now().Sub(*signature.IngestionTime).Microseconds())
@@ -193,24 +193,32 @@ func (t *Task) Call() (taskResults []*TaskResult, err error) {
 	if !lastResult.IsNil() {
 		recordTimeSinceIngestion("ingestion_to_err")
 
-		// If the result implements Retriable interface, return instance of Retriable
-		retriableErrorInterface := reflect.TypeOf((*Retriable)(nil)).Elem()
-		if lastResult.Type().Implements(retriableErrorInterface) {
-			return nil, lastResult.Interface().(ErrRetryTaskLater)
-		}
+		value := lastResult.Interface()
 
-		// Otherwise, check that the result implements the standard error interface,
+		// check that the result implements the standard error interface,
 		// if not, return ErrLastReturnValueMustBeError error
-		errorInterface := reflect.TypeOf((*error)(nil)).Elem()
-		if !lastResult.Type().Implements(errorInterface) {
+		asError, ok := value.(error)
+		if !ok {
 			return nil, ErrLastReturnValueMustBeError
 		}
 
+		_, isRetriable := asError.(Retriable)
+
 		if span != nil {
-			span.LogFields(opentracing_log.Error(lastResult.Interface().(error)))
+			if !isRetriable {
+				span.LogFields(opentracing_log.Error(asError))
+			} else {
+				span.SetTag("warning", asError)
+			}
 		}
+		span.SetTag("can_retry", isRetriable)
+		span.SetTag("did_fail", true)
+
 		// Return the standard error
-		return nil, lastResult.Interface().(error)
+		return nil, asError
+	}
+	if span != nil {
+		span.SetTag("did_fail", false)
 	}
 
 	recordTimeSinceIngestion("ingestion_to_success")
