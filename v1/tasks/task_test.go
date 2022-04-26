@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
+
 	"github.com/RichardKnop/machinery/v1/tasks"
 	"github.com/stretchr/testify/assert"
 )
@@ -18,6 +20,7 @@ func TestTaskCallErrorTest(t *testing.T) {
 	retriable := func() error { return tasks.NewErrRetryTaskLater("some error", 4*time.Hour) }
 
 	task, err := tasks.New(retriable, []tasks.Arg{})
+	_, task.Context = opentracing.StartSpanFromContext(context.Background(), "test")
 	assert.NoError(t, err)
 
 	// Invoke TryCall and validate that returned error can be cast to tasks.ErrRetryTaskLater
