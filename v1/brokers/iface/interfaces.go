@@ -21,6 +21,8 @@ type Broker interface {
 }
 
 type RetrySameMessage interface {
+	Broker
+
 	// RetryMessage Does not return an error because, at least with current use case, all errors should just be ignored
 	RetryMessage(s *tasks.Signature)
 }

@@ -254,7 +254,7 @@ func (worker *Worker) retryTaskIn(signature *tasks.Signature, retryIn time.Durat
 func (worker *Worker) keepAndRetryTaskIn(signature *tasks.Signature, retryIn time.Duration) error {
 	// Update task state to RETRY
 	if err := worker.server.GetBackend().SetStateRetry(signature); err != nil {
-		return fmt.Errorf("Set state to 'retry' for task %s returned error: %s", signature.UUID, err)
+		return fmt.Errorf("Set state to 'retry' for task %s returned error: %w", signature.UUID, err)
 	}
 
 	// Delay task by retryIn duration
