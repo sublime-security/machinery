@@ -186,6 +186,8 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 func (b *Broker) extend(by time.Duration, signature *tasks.Signature) error {
 	b.AdjustRoutingKey(signature)
 
+	by = restrictVisibilityTimeoutDelay(by)
+
 	visibilityInput := &awssqs.ChangeMessageVisibilityInput{
 		QueueUrl:          aws.String(b.GetConfig().Broker + "/" + signature.RoutingKey),
 		ReceiptHandle:     &signature.SQSReceiptHandle,
@@ -200,12 +202,7 @@ func (b *Broker) RetryMessage(signature *tasks.Signature) {
 	b.AdjustRoutingKey(signature)
 
 	delay := signature.ETA.Sub(time.Now().UTC())
-	if delay > maxAWSSQSVisibilityTimeout {
-		log.ERROR.Printf("attempted to retry a message with invalid delay: %s. using max.", delay.String())
-		delay = maxAWSSQSVisibilityTimeout
-	} else if delay < 0 {
-		delay = 0
-	}
+	delay = restrictVisibilityTimeoutDelay(delay)
 
 	visibilityInput := &awssqs.ChangeMessageVisibilityInput{
 		QueueUrl:          aws.String(b.GetConfig().Broker + "/" + signature.RoutingKey),
@@ -217,6 +214,16 @@ func (b *Broker) RetryMessage(signature *tasks.Signature) {
 	if err != nil {
 		log.ERROR.Printf("ignoring error attempting to change visibility timeout. will re-attempt after default period. task %s", signature.UUID)
 	}
+}
+
+func restrictVisibilityTimeoutDelay(delay time.Duration) time.Duration {
+	if delay > maxAWSSQSVisibilityTimeout {
+		log.ERROR.Printf("attempted to retry a message with invalid delay: %s. using max.", delay.String())
+		delay = maxAWSSQSVisibilityTimeout
+	} else if delay < 0 {
+		delay = 0
+	}
+	return delay
 }
 
 // consume is a method which keeps consuming deliveries from a channel, until there is an error or a stop signal
