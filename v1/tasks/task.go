@@ -210,9 +210,10 @@ func (t *Task) Call() (taskResults []*TaskResult, err error) {
 			} else {
 				span.SetTag("warning", asError)
 			}
+
+			span.SetTag("can_retry", isRetriable)
+			span.SetTag("did_fail", true)
 		}
-		span.SetTag("can_retry", isRetriable)
-		span.SetTag("did_fail", true)
 
 		// Return the standard error
 		return nil, asError
