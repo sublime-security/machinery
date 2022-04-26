@@ -186,9 +186,14 @@ func (worker *Worker) Process(signature *tasks.Signature, extendFunc tasks.Exten
 	if err != nil {
 		// If a tasks.ErrRetryTaskLater was returned from the task,
 		// retry the task after specified duration
-		retriableErr, ok := interface{}(err).(tasks.ErrRetryTaskLater)
+		retryTaskLaterErr, ok := interface{}(err).(tasks.ErrRetryTaskLater)
 		if ok {
-			return worker.retryTaskIn(signature, retriableErr.RetryIn())
+			return worker.retryTaskIn(signature, retryTaskLaterErr.RetryIn())
+		}
+
+		keepAndRetryErr, ok := interface{}(err).(tasks.ErrKeepAndRetryTaskLater)
+		if ok {
+			return worker.keepAndRetryTaskIn(signature, keepAndRetryErr.RetryIn())
 		}
 
 		// Otherwise, execute default retry logic based on signature.RetryCount
@@ -243,6 +248,22 @@ func (worker *Worker) retryTaskIn(signature *tasks.Signature, retryIn time.Durat
 	// Send the task back to the queue
 	_, err := worker.server.SendTask(signature)
 	return err
+}
+
+// keepAndRetryTaskIn attempts to keep the message on the queue but with a new ETA of now + retryIn.Seconds()
+func (worker *Worker) keepAndRetryTaskIn(signature *tasks.Signature, retryIn time.Duration) error {
+	// Update task state to RETRY
+	if err := worker.server.GetBackend().SetStateRetry(signature); err != nil {
+		return fmt.Errorf("Set state to 'retry' for task %s returned error: %w", signature.UUID, err)
+	}
+
+	// Delay task by retryIn duration
+	eta := time.Now().UTC().Add(retryIn)
+	signature.ETA = &eta
+
+	log.WARNING.Printf("Task %s failed. Going to retry in %.0f seconds. Attempting to keep message.", signature.UUID, retryIn.Seconds())
+
+	return worker.server.RetryTaskAt(signature)
 }
 
 // taskSucceeded updates the task state and triggers success callbacks or a

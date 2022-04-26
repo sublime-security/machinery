@@ -20,6 +20,13 @@ type Broker interface {
 	AdjustRoutingKey(s *tasks.Signature)
 }
 
+type RetrySameMessage interface {
+	Broker
+
+	// RetryMessage Does not return an error because, at least with current use case, all errors should just be ignored
+	RetryMessage(s *tasks.Signature)
+}
+
 // TaskProcessor - can process a delivered task
 // This will probably always be a worker instance
 type TaskProcessor interface {

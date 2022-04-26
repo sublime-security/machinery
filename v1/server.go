@@ -12,6 +12,7 @@ import (
 
 	"github.com/RichardKnop/machinery/v1/backends/result"
 	"github.com/RichardKnop/machinery/v1/brokers/eager"
+	"github.com/RichardKnop/machinery/v1/brokers/errs"
 	"github.com/RichardKnop/machinery/v1/config"
 	"github.com/RichardKnop/machinery/v1/log"
 	"github.com/RichardKnop/machinery/v1/tasks"
@@ -220,6 +221,18 @@ func (server *Server) SendTaskWithContext(ctx context.Context, signature *tasks.
 // SendTask publishes a task to the default queue
 func (server *Server) SendTask(signature *tasks.Signature) (*result.AsyncResult, error) {
 	return server.SendTaskWithContext(context.Background(), signature)
+}
+
+// RetryTaskAt attempts to retry the same task at the given time, but falls back to sending the task.
+func (server *Server) RetryTaskAt(signature *tasks.Signature) error {
+	if retrier, ok := server.broker.(brokersiface.RetrySameMessage); ok {
+		retrier.RetryMessage(signature)
+
+		return errs.ErrStopTaskDeletion
+	}
+
+	_, err := server.SendTaskWithContext(context.Background(), signature)
+	return err
 }
 
 // SendChainWithContext will inject the trace context in all the signature headers before publishing it
