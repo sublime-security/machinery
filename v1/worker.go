@@ -217,6 +217,7 @@ func (worker *Worker) taskRetry(signature *tasks.Signature) error {
 
 	// Decrement the retry counter, when it reaches 0, we won't retry again
 	signature.RetryCount--
+	signature.AttemptCount++
 
 	// Increase retry timeout
 	signature.RetryTimeout = retry.FibonacciNext(signature.RetryTimeout)
@@ -243,6 +244,9 @@ func (worker *Worker) retryTaskIn(signature *tasks.Signature, retryIn time.Durat
 	eta := time.Now().UTC().Add(retryIn)
 	signature.ETA = &eta
 
+	// Increase the attempt count, but leave RetryCount alone because it's for the default retry behavior.
+	signature.AttemptCount++
+
 	log.WARNING.Printf("Task %s failed. Going to retry in %.0f seconds.", signature.UUID, retryIn.Seconds())
 
 	// Send the task back to the queue
@@ -260,6 +264,10 @@ func (worker *Worker) keepAndRetryTaskIn(signature *tasks.Signature, retryIn tim
 	// Delay task by retryIn duration
 	eta := time.Now().UTC().Add(retryIn)
 	signature.ETA = &eta
+
+	// Increase the attempt count, but leave RetryCount alone because it's for the default retry behavior. This will
+	// only matter if the broker does not support RetryMessage and falls back to sending a new task.
+	signature.AttemptCount++
 
 	log.WARNING.Printf("Task %s failed. Going to retry in %.0f seconds. Attempting to keep message.", signature.UUID, retryIn.Seconds())
 
