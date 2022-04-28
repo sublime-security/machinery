@@ -165,7 +165,8 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 		delay := signature.ETA.Sub(now)
 		if delay > 0 {
 			if delay > maxAWSSQSDelay {
-				return errors.New("Max AWS SQS delay exceeded")
+				log.ERROR.Printf("max AWS SQS delay exceeded sending %s. defaulting to max.", signature.Name)
+				delay = maxAWSSQSDelay
 			}
 			MsgInput.DelaySeconds = aws.Int64(int64(delay.Seconds()))
 		}
@@ -266,13 +267,7 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 
 	if receiveCount := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameApproximateReceiveCount]; receiveCount != nil {
 		if rc, err := strconv.ParseInt(*receiveCount, 10, 64); err == nil {
-			sqsRetryCount := int(rc) - 1
-
-			// RetryCount may already be part of the signature if using certain retry mechanisms. To avoid overwriting,
-			// just use whichever one is higher.
-			if sqsRetryCount > sig.RetryCount {
-				sig.RetryCount = sqsRetryCount
-			}
+			sig.AttemptCount = int(rc) - 1 // SQS receive count includes this attempt, but AttemptCount goes from 0
 		}
 	}
 

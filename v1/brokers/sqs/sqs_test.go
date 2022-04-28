@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RichardKnop/machinery/v1/brokers/iface"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/stretchr/testify/assert"
 
@@ -34,6 +36,12 @@ func TestNewAWSSQSBroker(t *testing.T) {
 	broker := sqs.NewTestBroker()
 
 	assert.IsType(t, broker, sqs.New(cnf))
+
+	// Really a compilation test
+	var asRetry iface.RetrySameMessage
+	asRetry = broker
+
+	assert.NotNil(t, asRetry)
 }
 
 func TestPrivateFunc_continueReceivingMessages(t *testing.T) {

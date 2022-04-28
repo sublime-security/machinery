@@ -56,7 +56,8 @@ type Signature struct {
 	Headers        Headers
 	Priority       uint8
 	Immutable      bool
-	RetryCount     int
+	RetryCount     int // Remaining retries
+	AttemptCount   int // Attempts (starting at 0 for convenience)
 	RetryTimeout   int
 	SplitSpan      bool
 	OnSuccess      []*Signature
