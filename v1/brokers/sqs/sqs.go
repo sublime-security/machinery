@@ -345,6 +345,7 @@ func (b *Broker) receiveMessage(qURL *string) (*awssqs.ReceiveMessageOutput, err
 	input := &awssqs.ReceiveMessageInput{
 		AttributeNames: []*string{
 			aws.String(awssqs.MessageSystemAttributeNameSentTimestamp),
+			aws.String(awssqs.MessageSystemAttributeNameApproximateReceiveCount),
 		},
 		MessageAttributeNames: []*string{
 			aws.String(awssqs.QueueAttributeNameAll),
