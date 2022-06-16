@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/RichardKnop/machinery/v1/tasks"
 )
 
 var (
+	now = time.Now().Round(time.Nanosecond)
+
 	reflectValuesTestCases = []struct {
 		name          string
 		value         interface{}
@@ -99,6 +102,12 @@ var (
 			expectedType:  "string",
 			expectedValue: "123",
 		},
+		{
+			name:          "time.Time",
+			value:         now.Format(time.RFC3339Nano),
+			expectedType:  "time.Time",
+			expectedValue: now,
+		},
 		// slices
 		{
 			name:          "[]bool",
@@ -184,6 +193,12 @@ var (
 			expectedType:  "[]string",
 			expectedValue: []string{"foo", "bar"},
 		},
+		{
+			name:          "[]time.Time",
+			value:         []interface{}{now.Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano)},
+			expectedType:  "[]time.Time",
+			expectedValue: []time.Time{now, now.UTC()},
+		},
 		// empty slices from NULL
 		{
 			name:          "[]bool",
@@ -214,6 +229,12 @@ var (
 			value:         nil,
 			expectedType:  "[]string",
 			expectedValue: []string{},
+		},
+		{
+			name:          "[]time.Time",
+			value:         nil,
+			expectedType:  "[]time.Time",
+			expectedValue: []time.Time{},
 		},
 	}
 )
