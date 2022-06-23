@@ -63,7 +63,7 @@ func TestStopConsuming(t *testing.T) {
 		broker := common.NewBroker(&config.Config{
 			DefaultQueue: "queue",
 		})
-		broker.StartConsuming("", 1, &machinery.Worker{})
+		broker.StartConsuming("", &machinery.Worker{})
 		broker.StopConsuming()
 		select {
 		case <-broker.GetStopChan():

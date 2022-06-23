@@ -68,7 +68,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcess
 		concurrency = runtime.NumCPU() * 2
 	}
 
-	b.Broker.StartConsuming(consumerTag, concurrency, taskProcessor)
+	b.Broker.StartConsuming(consumerTag, taskProcessor)
 
 	conn := b.open()
 	defer conn.Close()

@@ -75,7 +75,7 @@ func (b *BrokerGR) StartConsuming(consumerTag string, concurrency int, taskProce
 		concurrency = runtime.NumCPU() * 2
 	}
 
-	b.Broker.StartConsuming(consumerTag, concurrency, taskProcessor)
+	b.Broker.StartConsuming(consumerTag, taskProcessor)
 
 	// Ping the server to make sure connection is live
 	_, err := b.rclient.Ping(context.Background()).Result()

@@ -96,7 +96,7 @@ func (b *Broker) GetDelayedTasks() ([]*tasks.Signature, error) {
 }
 
 // StartConsuming is a common part of StartConsuming method
-func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcessor iface.TaskProcessor) {
+func (b *Broker) StartConsuming(consumerTag string, taskProcessor iface.TaskProcessor) {
 	if b.retryFunc == nil {
 		b.retryFunc = retry.Closure()
 	}
