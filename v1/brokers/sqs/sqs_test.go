@@ -109,7 +109,7 @@ func TestPrivateFunc_consume(t *testing.T) {
 	broker := sqs.NewTestBroker()
 
 	// an infinite loop will be executed only when there is no error
-	err = broker.ConsumeForTest(deliveries, 0, wk, pool)
+	err = broker.ConsumeForTest(deliveries, wk, pool)
 	assert.NotNil(t, err)
 }
 
@@ -214,24 +214,24 @@ func TestPrivateFunc_consumeDeliveries(t *testing.T) {
 	broker := sqs.NewTestBroker()
 
 	go func() { deliveries <- receiveMessageOutput }()
-	whetherContinue, err := broker.ConsumeDeliveriesForTest(deliveries, concurrency, wk, pool, errorsChan)
+	whetherContinue, err := broker.ConsumeDeliveriesForTest(deliveries, wk, pool, errorsChan)
 	assert.True(t, whetherContinue)
 	assert.Nil(t, err)
 
 	go func() { errorsChan <- errors.New("foo error") }()
-	whetherContinue, err = broker.ConsumeDeliveriesForTest(deliveries, concurrency, wk, pool, errorsChan)
+	whetherContinue, err = broker.ConsumeDeliveriesForTest(deliveries, wk, pool, errorsChan)
 	assert.False(t, whetherContinue)
 	assert.NotNil(t, err)
 
 	go func() { broker.GetStopChanForTest() <- 1 }()
-	whetherContinue, err = broker.ConsumeDeliveriesForTest(deliveries, concurrency, wk, pool, errorsChan)
+	whetherContinue, err = broker.ConsumeDeliveriesForTest(deliveries, wk, pool, errorsChan)
 	assert.False(t, whetherContinue)
 	assert.Nil(t, err)
 
 	outputCopy := *receiveMessageOutput
 	outputCopy.Messages = []*awssqs.Message{}
 	go func() { deliveries <- &outputCopy }()
-	whetherContinue, err = broker.ConsumeDeliveriesForTest(deliveries, concurrency, wk, pool, errorsChan)
+	whetherContinue, err = broker.ConsumeDeliveriesForTest(deliveries, wk, pool, errorsChan)
 	e := <-errorsChan
 	assert.True(t, whetherContinue)
 	assert.NotNil(t, e)
@@ -251,7 +251,7 @@ func TestPrivateFunc_consumeDeliveries(t *testing.T) {
 		// <-pool will block the routine in the following steps, so pool <- struct{}{} will be executed for sure
 		go func() { wg.Wait(); pool <- struct{}{} }()
 	}
-	whetherContinue, err = broker.ConsumeDeliveriesForTest(deliveries, concurrency, wk, pool, errorsChan)
+	whetherContinue, err = broker.ConsumeDeliveriesForTest(deliveries, wk, pool, errorsChan)
 	// the pool shouldn't be consumed
 	p := <-pool
 	assert.True(t, whetherContinue)
@@ -334,7 +334,7 @@ func TestPrivateFunc_consumeWithConcurrency(t *testing.T) {
 	}()
 
 	go func() {
-		err = broker.ConsumeForTest(deliveries, 1, wk, pool)
+		err = broker.ConsumeForTest(deliveries, wk, pool)
 	}()
 
 	select {

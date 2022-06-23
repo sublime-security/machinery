@@ -109,7 +109,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcess
 		}
 	}()
 
-	if err := b.consume(deliveries, concurrency, taskProcessor, pool); err != nil {
+	if err := b.consume(deliveries, taskProcessor, pool); err != nil {
 		return b.GetRetry(), err
 	}
 
@@ -228,12 +228,12 @@ func restrictVisibilityTimeoutDelay(delay time.Duration) time.Duration {
 }
 
 // consume is a method which keeps consuming deliveries from a channel, until there is an error or a stop signal
-func (b *Broker) consume(deliveries <-chan *awssqs.ReceiveMessageOutput, concurrency int, taskProcessor iface.TaskProcessor, pool chan struct{}) error {
+func (b *Broker) consume(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, pool chan struct{}) error {
 
 	errorsChan := make(chan error)
 
 	for {
-		whetherContinue, err := b.consumeDeliveries(deliveries, concurrency, taskProcessor, pool, errorsChan)
+		whetherContinue, err := b.consumeDeliveries(deliveries, taskProcessor, pool, errorsChan)
 		if err != nil {
 			return err
 		}
@@ -367,7 +367,7 @@ func (b *Broker) initializePool(pool chan struct{}, concurrency int) {
 }
 
 // consumeDeliveries is a method consuming deliveries from deliveries channel
-func (b *Broker) consumeDeliveries(deliveries <-chan *awssqs.ReceiveMessageOutput, concurrency int, taskProcessor iface.TaskProcessor, pool chan struct{}, errorsChan chan error) (bool, error) {
+func (b *Broker) consumeDeliveries(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, pool chan struct{}, errorsChan chan error) (bool, error) {
 	select {
 	case err := <-errorsChan:
 		return false, err
@@ -385,10 +385,8 @@ func (b *Broker) consumeDeliveries(deliveries <-chan *awssqs.ReceiveMessageOutpu
 
 			b.processingWG.Done()
 
-			if concurrency > 0 {
-				// give worker back to pool
-				pool <- struct{}{}
-			}
+			// give worker back to pool
+			pool <- struct{}{}
 		}()
 	case <-b.GetStopChan():
 		return false, nil

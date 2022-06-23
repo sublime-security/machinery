@@ -146,8 +146,8 @@ func NewTestErrorBroker() *Broker {
 	}
 }
 
-func (b *Broker) ConsumeForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, concurrency int, taskProcessor iface.TaskProcessor, pool chan struct{}) error {
-	return b.consume(deliveries, concurrency, taskProcessor, pool)
+func (b *Broker) ConsumeForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, pool chan struct{}) error {
+	return b.consume(deliveries, taskProcessor, pool)
 }
 
 func (b *Broker) ConsumeOneForTest(delivery *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor) error {
@@ -170,8 +170,8 @@ func (b *Broker) InitializePoolForTest(pool chan struct{}, concurrency int) {
 	b.initializePool(pool, concurrency)
 }
 
-func (b *Broker) ConsumeDeliveriesForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, concurrency int, taskProcessor iface.TaskProcessor, pool chan struct{}, errorsChan chan error) (bool, error) {
-	return b.consumeDeliveries(deliveries, concurrency, taskProcessor, pool, errorsChan)
+func (b *Broker) ConsumeDeliveriesForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, pool chan struct{}, errorsChan chan error) (bool, error) {
+	return b.consumeDeliveries(deliveries, taskProcessor, pool, errorsChan)
 }
 
 func (b *Broker) ContinueReceivingMessagesForTest(qURL *string, deliveries chan *awssqs.ReceiveMessageOutput) (bool, error) {
