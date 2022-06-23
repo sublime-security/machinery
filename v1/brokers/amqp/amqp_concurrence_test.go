@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RichardKnop/machinery/v1/common"
+
 	"github.com/RichardKnop/machinery/v1/brokers/iface"
 	"github.com/RichardKnop/machinery/v1/config"
 	"github.com/RichardKnop/machinery/v1/tasks"
@@ -46,7 +48,7 @@ func TestConsume(t *testing.T) {
 		}()
 
 		go func() {
-			err := broker.consume(deliveries, 2, processor, closeChan)
+			err := broker.consume(deliveries, common.NewResizableWithStartingCapacity(2), processor, closeChan)
 			if err != nil {
 				errChan <- err
 			}

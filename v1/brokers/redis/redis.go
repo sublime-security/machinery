@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"runtime"
 	"sync"
 	"time"
 
@@ -60,13 +59,9 @@ func New(cnf *config.Config, host, password, socketPath string, db int) iface.Br
 }
 
 // StartConsuming enters a loop and waits for incoming messages
-func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcessor iface.TaskProcessor) (bool, error) {
+func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable, taskProcessor iface.TaskProcessor) (bool, error) {
 	b.consumingWG.Add(1)
 	defer b.consumingWG.Done()
-
-	if concurrency < 1 {
-		concurrency = runtime.NumCPU() * 2
-	}
 
 	b.Broker.StartConsuming(consumerTag, taskProcessor)
 
@@ -89,13 +84,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcess
 	}
 
 	// Channel to which we will push tasks ready for processing by worker
-	deliveries := make(chan []byte, concurrency)
-	pool := make(chan struct{}, concurrency)
-
-	// initialize worker pool with maxWorkers workers
-	for i := 0; i < concurrency; i++ {
-		pool <- struct{}{}
-	}
+	deliveries := make(chan []byte)
 
 	// A receiving goroutine keeps popping messages from the queue by BLPOP
 	// If the message is valid and can be unmarshaled into a proper structure
@@ -105,12 +94,16 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcess
 		log.INFO.Print("[*] Waiting for messages. To exit press CTRL+C")
 
 		for {
+
+			take, cancel := concurrency.Lease()
+
 			select {
 			// A way to stop this goroutine from b.StopConsuming
 			case <-b.GetStopChan():
 				close(deliveries)
+				cancel()
 				return
-			case <-pool:
+			case <-take:
 				select {
 				case <-b.GetStopChan():
 					close(deliveries)
@@ -125,8 +118,6 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcess
 						deliveries <- task
 					}
 				}
-
-				pool <- struct{}{}
 			}
 		}
 	}()
@@ -162,7 +153,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcess
 		}
 	}()
 
-	if err := b.consume(deliveries, taskProcessor, pool); err != nil {
+	if err := b.consume(deliveries, taskProcessor, concurrency); err != nil {
 		return b.GetRetry(), err
 	}
 
@@ -281,7 +272,7 @@ func (b *Broker) GetDelayedTasks() ([]*tasks.Signature, error) {
 
 // consume takes delivered messages from the channel and manages a worker pool
 // to process tasks concurrently
-func (b *Broker) consume(deliveries <-chan []byte, taskProcessor iface.TaskProcessor, pool chan struct{}) error {
+func (b *Broker) consume(deliveries <-chan []byte, taskProcessor iface.TaskProcessor, concurrency iface.Resizeable) error {
 	errorsChan := make(chan error)
 
 	for {
@@ -304,7 +295,7 @@ func (b *Broker) consume(deliveries <-chan []byte, taskProcessor iface.TaskProce
 
 				b.processingWG.Done()
 
-				pool <- struct{}{}
+				concurrency.Return()
 			}()
 		}
 	}

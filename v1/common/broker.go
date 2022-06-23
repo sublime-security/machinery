@@ -137,3 +137,52 @@ func (b *Broker) AdjustRoutingKey(s *tasks.Signature) {
 
 	s.RoutingKey = b.GetConfig().DefaultQueue
 }
+
+type resizableCapacity struct {
+	sizeLock sync.Mutex
+
+	desiredCapacity int
+}
+
+type constantCapacityResizeable struct {
+	pool chan struct{}
+}
+
+func NewConstantCapacity(concurrency int) constantCapacityResizeable {
+	// make(chan struct{}, concurrency)
+	pool := make(chan struct{}, concurrency)
+	for i := 0; i < concurrency; i++ {
+		pool <- struct{}{}
+	}
+
+	return constantCapacityResizeable{pool: pool}
+}
+
+func (p constantCapacityResizeable) Return() {
+	p.pool <- struct{}{}
+}
+
+func (p constantCapacityResizeable) Take() {
+	<-p.pool
+}
+
+func (p constantCapacityResizeable) Lease() (<-chan struct{}, func()) {
+	cancelChan := make(chan struct{}, 1)
+	take := make(chan struct{}, 1)
+
+	go func() {
+		select {
+		case <-cancelChan:
+			return
+		case <-p.pool:
+			take <- struct{}{}
+			return
+		}
+	}()
+
+	return take, func() {
+		cancelChan <- struct{}{}
+	}
+}
+
+func (p constantCapacityResizeable) SetCapacity(int) {}

@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/RichardKnop/machinery/v1/common"
+
 	"github.com/opentracing/opentracing-go"
 
 	"github.com/RichardKnop/machinery/v1/backends/amqp"
@@ -78,7 +80,8 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 	// Goroutine to start broker consumption and handle retries when broker connection dies
 	go func() {
 		for {
-			retry, err := broker.StartConsuming(worker.ConsumerTag, worker.Concurrency, worker)
+			concurrency := common.NewResizableWithStartingCapacity(worker.Concurrency)
+			retry, err := broker.StartConsuming(worker.ConsumerTag, concurrency, worker)
 
 			if retry {
 				if worker.errorHandler != nil {
