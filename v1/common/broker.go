@@ -139,50 +139,48 @@ func (b *Broker) AdjustRoutingKey(s *tasks.Signature) {
 }
 
 type resizableCapacity struct {
-	sizeLock sync.Mutex
+	lock sync.Mutex
 
-	desiredCapacity int
+	capacity int
+	taken    int
+
+	returnNotification chan struct{}
 }
 
-type constantCapacityResizeable struct {
-	pool chan struct{}
+func NewResizableWithStartingCapacity(concurrency int) iface.Resizeable {
+	return &resizableCapacity{capacity: concurrency}
 }
 
-func NewConstantCapacity(concurrency int) constantCapacityResizeable {
-	// make(chan struct{}, concurrency)
-	pool := make(chan struct{}, concurrency)
-	for i := 0; i < concurrency; i++ {
-		pool <- struct{}{}
-	}
+func (p *resizableCapacity) Return() {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 
-	return constantCapacityResizeable{pool: pool}
-}
-
-func (p constantCapacityResizeable) Return() {
-	p.pool <- struct{}{}
-}
-
-func (p constantCapacityResizeable) Take() {
-	<-p.pool
-}
-
-func (p constantCapacityResizeable) Lease() (<-chan struct{}, func()) {
-	cancelChan := make(chan struct{}, 1)
-	take := make(chan struct{}, 1)
-
-	go func() {
-		select {
-		case <-cancelChan:
-			return
-		case <-p.pool:
-			take <- struct{}{}
-			return
-		}
-	}()
-
-	return take, func() {
-		cancelChan <- struct{}{}
+	if p.taken < p.capacity {
+		p.taken--
+		p.returnNotification <- struct{}{}
 	}
 }
 
-func (p constantCapacityResizeable) SetCapacity(int) {}
+func (p *resizableCapacity) Take() {
+	take, cancel := p.Lease()
+	defer cancel()
+	<-take
+}
+
+func (p *resizableCapacity) Lease() (<-chan struct{}, func()) {
+	p.lock.Lock()
+
+	// Already capacity, don't create extra channels, funcs, etc
+	if p.taken < p.capacity {
+		take := make(chan struct{}, 1)
+		take <- struct{}{}
+		defer p.lock.Unlock()
+		return take, func() {}
+	}
+}
+
+func (p *resizableCapacity) SetCapacity(desiredCap int) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.capacity = desiredCap
+}
