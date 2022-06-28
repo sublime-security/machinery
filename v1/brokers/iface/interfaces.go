@@ -22,8 +22,8 @@ type Broker interface {
 
 type Resizeable interface {
 	Return()
-	Take()
-	Lease() (<-chan struct{}, func())
+
+	Pool() <-chan struct{}
 
 	SetCapacity(int)
 }

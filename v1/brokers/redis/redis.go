@@ -93,17 +93,16 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 
 		log.INFO.Print("[*] Waiting for messages. To exit press CTRL+C")
 
-		for {
+		pool := concurrency.Pool()
 
-			take, cancel := concurrency.Lease()
+		for {
 
 			select {
 			// A way to stop this goroutine from b.StopConsuming
 			case <-b.GetStopChan():
 				close(deliveries)
-				cancel()
 				return
-			case <-take:
+			case <-pool:
 				select {
 				case <-b.GetStopChan():
 					close(deliveries)

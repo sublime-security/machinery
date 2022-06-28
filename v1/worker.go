@@ -86,6 +86,7 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 	go func() {
 		for {
 			concurrency := worker.Capacity
+			var cancel func()
 
 			if worker.Concurrency != 0 {
 				// Fail fast if both are specified to avoid confusion
@@ -94,11 +95,14 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 					return
 				}
 
-				concurrency = common.NewResizableWithStartingCapacity(worker.Concurrency)
+				concurrency, cancel = common.NewResizableWithStartingCapacity(worker.Concurrency)
 			}
 
 			retry, err := broker.StartConsuming(worker.ConsumerTag, concurrency, worker)
 
+			if cancel != nil {
+				cancel()
+			}
 			if retry {
 				if worker.errorHandler != nil {
 					worker.errorHandler(err)
@@ -110,6 +114,7 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 				errorsChan <- err // stop the goroutine
 				return
 			}
+
 		}
 	}()
 	if !cnf.NoUnixSignals {

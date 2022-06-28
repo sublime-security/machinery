@@ -97,17 +97,15 @@ func (b *BrokerGR) StartConsuming(consumerTag string, concurrency iface.Resizeab
 
 		log.INFO.Print("[*] Waiting for messages. To exit press CTRL+C")
 
+		pool := concurrency.Pool()
+
 		for {
-
-			take, cancel := concurrency.Lease()
-
 			select {
 			// A way to stop this goroutine from b.StopConsuming
 			case <-b.GetStopChan():
 				close(deliveries)
-				cancel()
 				return
-			case <-take:
+			case <-pool:
 				task, _ := b.nextTask(getQueueGR(b.GetConfig(), taskProcessor))
 				//TODO: should this error be ignored?
 				if len(task) > 0 {

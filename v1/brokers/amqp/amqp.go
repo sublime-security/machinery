@@ -262,6 +262,8 @@ func (b *Broker) consume(deliveries <-chan amqp.Delivery, concurrency iface.Resi
 	// a worker, that is, it avoids a possible deadlock
 	errorsChan := make(chan error, 1)
 
+	pool := concurrency.Pool()
+
 	for {
 		select {
 		case amqpErr := <-amqpCloseChan:
@@ -269,7 +271,7 @@ func (b *Broker) consume(deliveries <-chan amqp.Delivery, concurrency iface.Resi
 		case err := <-errorsChan:
 			return err
 		case d := <-deliveries:
-			concurrency.Take()
+			<-pool
 			b.processingWG.Add(1)
 
 			// Consume the task inside a gotourine so multiple tasks

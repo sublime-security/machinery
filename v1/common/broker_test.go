@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/RichardKnop/machinery/v1"
 	"github.com/RichardKnop/machinery/v1/common"
 	"github.com/RichardKnop/machinery/v1/config"
@@ -76,35 +78,42 @@ func TestStopConsuming(t *testing.T) {
 
 func TestResizable(t *testing.T) {
 	capacity := 2
-	rs := common.NewResizableWithStartingCapacity(capacity)
+	rs, cancel := common.NewResizableWithStartingCapacity(capacity)
 
-	var endValidations []func()
+	pool := rs.Pool()
 
-	acquireAllSlots := func() {
+	tryAcquire := func(didTake *bool) func() {
+		cc := make(chan struct{}, 1)
+
+		go func() {
+			select {
+			case <-pool:
+				*didTake = true
+			case <-cc:
+				return
+			}
+		}()
+
+		return func() {
+			cc <- struct{}{}
+		}
+	}
+
+	acquireAll := func() {
 		st := time.Now()
 
 		for i := 0; i < capacity; i++ {
-			if i%2 == 0 {
-				rs.Take()
-			} else {
-				lease, cancel := rs.Lease()
-				defer cancel()
-
-				<-lease
-			}
+			<-pool
 		}
 
 		assert.Less(t, time.Since(st), time.Millisecond)
 	}
-	acquireAllSlots()
+	acquireAll()
 
-	takeBlocks := func() {
+	acquireBlockTillReturn := func() {
 		var didTake bool
 
-		go func() {
-			rs.Take()
-			didTake = true
-		}()
+		cc := tryAcquire(&didTake)
 
 		time.Sleep(time.Millisecond)
 		assert.False(t, didTake)
@@ -112,35 +121,15 @@ func TestResizable(t *testing.T) {
 		rs.Return()
 		time.Sleep(time.Millisecond)
 		assert.True(t, didTake)
-	}
-	takeBlocks()
 
-	leaseBlocks := func() {
+		cc()
+	}
+	acquireBlockTillReturn()
+
+	acquireBlocksTillAdd := func() {
 		var didTake bool
 
-		go func() {
-			take, cancel := rs.Lease()
-			defer cancel()
-			<-take
-			didTake = true
-		}()
-
-		time.Sleep(time.Millisecond)
-		assert.False(t, didTake)
-
-		rs.Return()
-		time.Sleep(time.Millisecond)
-		assert.True(t, didTake)
-	}
-	leaseBlocks()
-
-	addAndUseWithTake := func() {
-		var didTake bool
-
-		go func() {
-			rs.Take()
-			didTake = true
-		}()
+		cc := tryAcquire(&didTake)
 
 		time.Sleep(time.Millisecond)
 		assert.False(t, didTake)
@@ -149,40 +138,18 @@ func TestResizable(t *testing.T) {
 		rs.SetCapacity(capacity)
 		time.Sleep(time.Millisecond)
 		assert.True(t, didTake)
+
+		cc()
 	}
-	addAndUseWithTake()
+	acquireBlocksTillAdd()
 
-	addAndUseWithLease := func() {
-		var didTake bool
+	require.Equal(t, 3, capacity)
 
-		go func() {
-			take, cancel := rs.Lease()
-			defer cancel()
-			<-take
-			didTake = true
-		}()
-
-		time.Sleep(time.Millisecond)
-		assert.False(t, didTake)
-
-		capacity++
-		rs.SetCapacity(capacity)
-		time.Sleep(time.Millisecond)
-		assert.True(t, didTake)
-	}
-	addAndUseWithLease()
-
-	// Remove capacity and cancel
+	// Remove capacity
 	removeCapacity := func() {
 		var didTake bool
 
-		var take <-chan struct{}
-		var cancel func()
-		go func() {
-			take, cancel = rs.Lease()
-			<-take
-			didTake = true
-		}()
+		cc := tryAcquire(&didTake)
 
 		time.Sleep(time.Millisecond)
 		assert.False(t, didTake)
@@ -190,20 +157,15 @@ func TestResizable(t *testing.T) {
 		capacity--
 		rs.SetCapacity(capacity)
 
-		cancel()
 		time.Sleep(time.Millisecond)
-
-		// Cancel doesn't allow taking (unvalidated but the go routine should exit allowing take to be collected)
 		assert.False(t, didTake)
 
-		endValidations = append(endValidations, func() {
-			assert.False(t, didTake)
-		})
+		cc()
 	}
 	removeCapacity()
 	removeCapacity()
 
-	assert.Equal(t, 2, capacity)
+	require.Equal(t, 1, capacity)
 
 	returnAllCapacity := func(count int) {
 		st := time.Now()
@@ -214,18 +176,15 @@ func TestResizable(t *testing.T) {
 
 		assert.Less(t, time.Since(st), time.Millisecond)
 	}
-	// Capacity is 2, but 2 additional slots are held from before capacity was reduced.
-	returnAllCapacity(4)
+	// Capacity is 1, but 2 additional slots are held from before capacity was reduced.
+	returnAllCapacity(3)
 
-	acquireAllSlots()
+	acquireAll()
 	removeCapacity()
 	returnAllCapacity(1)
-	addAndUseWithLease()
 	removeCapacity()
 	returnAllCapacity(1)
-	addAndUseWithTake()
+	acquireBlocksTillAdd()
 
-	for _, f := range endValidations {
-		f()
-	}
+	cancel()
 }

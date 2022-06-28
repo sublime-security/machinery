@@ -139,76 +139,99 @@ func (b *Broker) AdjustRoutingKey(s *tasks.Signature) {
 }
 
 type resizableCapacity struct {
-	lock sync.Mutex
+	changes chan change
 
-	capacity int
-	taken    int
-
-	changeNotification chan struct{}
+	pool chan struct{}
 }
 
-func NewResizableWithStartingCapacity(concurrency int) iface.Resizeable {
-	// TODO: the buffered channel could lockup on return. Make this crazy high or otherwise mitigate?
-	return &resizableCapacity{capacity: concurrency, changeNotification: make(chan struct{}, 100)}
+type change struct {
+	isReturned bool
+	updatedCap *int
 }
 
-func (p *resizableCapacity) Return() {
-	p.lock.Lock()
-	p.taken--
-	p.lock.Unlock()
-
-	p.changeNotification <- struct{}{}
-}
-
-func (p *resizableCapacity) Take() {
-	take, cancel := p.Lease()
-	defer cancel()
-	<-take
-}
-
-func (p *resizableCapacity) Lease() (<-chan struct{}, func()) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	take := make(chan struct{}, 1)
-
-	// Already has capacity, don't create extra channels, funcs, etc
-	if p.taken < p.capacity {
-		p.taken++
-		take <- struct{}{}
-		return take, func() {}
+func NewResizableWithStartingCapacity(concurrency int) (iface.Resizeable, func()) {
+	rc := &resizableCapacity{
+		changes: make(chan change),
+		pool:    make(chan struct{}),
 	}
 
-	cancelChan := make(chan struct{}, 1)
+	var (
+		// A separate routine is used to push any available capacity to the pool, when available. This channel allows
+		// cancelling the last function when available capacity changes (both to avoid leaking resources and so that
+		// capacity available at one point that wasn't used isn't given when capacity is lowered.
+		lastGiverCancel chan struct{}
 
+		capacity int
+		taken    int
+
+		// Used to cancel the background routine/release resources
+		cancelChan = make(chan struct{}, 1)
+	)
+
+	// Use a routine to coordinate changes (either returned capacity or changed capacity)
+	// This allows the different paths to both ultimately control a single channel that can be used as a normal
+	// capacity pool channel.
 	go func() {
 		for {
 			select {
 			case <-cancelChan:
-				return
-			case <-p.changeNotification:
-				p.lock.Lock()
-				if p.taken < p.capacity {
-					p.taken++
-
-					p.lock.Unlock()
-					take <- struct{}{}
-					return
+				if lastGiverCancel != nil {
+					lastGiverCancel <- struct{}{}
 				}
-				p.lock.Unlock()
+
+				return
+			case c := <-rc.changes:
+				// Kill the function that might be giving capacity -- a new function will be started if any is available
+				if lastGiverCancel != nil {
+					lastGiverCancel <- struct{}{}
+					lastGiverCancel = nil
+				}
+
+				// Calculate what's available based on the change
+				if c.isReturned {
+					taken--
+				}
+				if c.updatedCap != nil {
+					capacity = *c.updatedCap
+				}
+				canGive := capacity - taken
+
+				if canGive > 0 {
+					// Launch a cancellable function which will populate the pool when there's a listener
+					// This must be a separate routine to ensure changes can occur even if there's no listener on the
+					// pool.
+					lastGiverCancel = make(chan struct{}, 1)
+
+					go func() {
+						for i := 0; i < canGive; i++ {
+							select {
+							case <-lastGiverCancel:
+								return
+							case rc.pool <- struct{}{}:
+								taken++
+							}
+						}
+					}()
+				}
 			}
 		}
 	}()
 
-	return take, func() {
+	rc.SetCapacity(concurrency)
+
+	return rc, func() {
 		cancelChan <- struct{}{}
 	}
 }
 
-func (p *resizableCapacity) SetCapacity(desiredCap int) {
-	p.lock.Lock()
-	p.capacity = desiredCap
-	p.lock.Unlock()
+func (p *resizableCapacity) Return() {
+	p.changes <- change{isReturned: true}
+}
 
-	p.changeNotification <- struct{}{}
+func (p *resizableCapacity) Pool() <-chan struct{} {
+	return p.pool
+}
+
+func (p *resizableCapacity) SetCapacity(desiredCap int) {
+	p.changes <- change{updatedCap: &desiredCap}
 }
