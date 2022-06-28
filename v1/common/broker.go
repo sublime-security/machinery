@@ -170,15 +170,15 @@ func (p *resizableCapacity) Lease() (<-chan struct{}, func()) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
+	take := make(chan struct{}, 1)
+
 	// Already has capacity, don't create extra channels, funcs, etc
 	if p.taken < p.capacity {
-		take := make(chan struct{}, 1)
 		p.taken++
 		take <- struct{}{}
 		return take, func() {}
 	}
 
-	take := make(chan struct{}, 1)
 	cancelChan := make(chan struct{}, 1)
 
 	go func() {
