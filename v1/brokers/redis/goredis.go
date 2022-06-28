@@ -66,7 +66,7 @@ func NewGR(cnf *config.Config, addrs []string, db int) iface.Broker {
 }
 
 // StartConsuming enters a loop and waits for incoming messages
-func (b *BrokerGR) StartConsuming(consumerTag string, concurrency iface.Resizeable, taskProcessor iface.TaskProcessor) (bool, error) {
+func (b *BrokerGR) StartConsuming(consumerTag string, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) (bool, error) {
 	b.consumingWG.Add(1)
 	defer b.consumingWG.Done()
 
@@ -245,7 +245,7 @@ func (b *BrokerGR) GetDelayedTasks() ([]*tasks.Signature, error) {
 
 // consume takes delivered messages from the channel and manages a worker pool
 // to process tasks concurrently
-func (b *BrokerGR) consume(deliveries <-chan []byte, concurrency iface.Resizeable, taskProcessor iface.TaskProcessor) error {
+func (b *BrokerGR) consume(deliveries <-chan []byte, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) error {
 	errorsChan := make(chan error)
 
 	for {

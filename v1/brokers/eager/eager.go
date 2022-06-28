@@ -30,7 +30,7 @@ type Mode interface {
 }
 
 // StartConsuming enters a loop and waits for incoming messages
-func (eagerBroker *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable, p iface.TaskProcessor) (bool, error) {
+func (eagerBroker *Broker) StartConsuming(consumerTag string, concurrency iface.ResizeablePool, p iface.TaskProcessor) (bool, error) {
 	return true, nil
 }
 

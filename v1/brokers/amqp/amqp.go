@@ -44,7 +44,7 @@ func New(cnf *config.Config) iface.Broker {
 }
 
 // StartConsuming enters a loop and waits for incoming messages
-func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable, taskProcessor iface.TaskProcessor) (bool, error) {
+func (b *Broker) StartConsuming(consumerTag string, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) (bool, error) {
 	b.Broker.StartConsuming(consumerTag, taskProcessor)
 
 	queueName := taskProcessor.CustomQueue()
@@ -256,7 +256,7 @@ func (b *Broker) extend(time.Duration, *tasks.Signature) error {
 
 // consume takes delivered messages from the channel and manages a worker pool
 // to process tasks concurrently
-func (b *Broker) consume(deliveries <-chan amqp.Delivery, concurrency iface.Resizeable, taskProcessor iface.TaskProcessor, amqpCloseChan <-chan *amqp.Error) error {
+func (b *Broker) consume(deliveries <-chan amqp.Delivery, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor, amqpCloseChan <-chan *amqp.Error) error {
 	// make channel with a capacity makes it become a buffered channel so that a worker which wants to
 	// push an error to `errorsChan` doesn't need to be blocked while the for-loop is blocked waiting
 	// a worker, that is, it avoids a possible deadlock

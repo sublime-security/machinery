@@ -149,7 +149,7 @@ type change struct {
 	updatedCap *int
 }
 
-func NewResizableWithStartingCapacity(concurrency int) (iface.Resizeable, func()) {
+func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 	rc := &resizableCapacity{
 		changes: make(chan change),
 		pool:    make(chan struct{}),
@@ -217,7 +217,7 @@ func NewResizableWithStartingCapacity(concurrency int) (iface.Resizeable, func()
 		}
 	}()
 
-	rc.SetCapacity(concurrency)
+	rc.SetCapacity(startingCapacity)
 
 	return rc, func() {
 		cancelChan <- struct{}{}

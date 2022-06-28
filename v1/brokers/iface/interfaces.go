@@ -12,7 +12,7 @@ type Broker interface {
 	GetConfig() *config.Config
 	SetRegisteredTaskNames(names []string)
 	IsTaskRegistered(name string) bool
-	StartConsuming(consumerTag string, concurrency Resizeable, p TaskProcessor) (bool, error)
+	StartConsuming(consumerTag string, concurrency ResizeablePool, p TaskProcessor) (bool, error)
 	StopConsuming()
 	Publish(ctx context.Context, task *tasks.Signature) error
 	GetPendingTasks(queue string) ([]*tasks.Signature, error)
@@ -20,7 +20,8 @@ type Broker interface {
 	AdjustRoutingKey(s *tasks.Signature)
 }
 
-type Resizeable interface {
+type ResizeablePool interface {
+	// Return a single entity to the pool. Similar to pool <- struct{}{}
 	Return()
 
 	Pool() <-chan struct{}

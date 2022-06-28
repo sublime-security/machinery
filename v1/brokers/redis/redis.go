@@ -59,7 +59,7 @@ func New(cnf *config.Config, host, password, socketPath string, db int) iface.Br
 }
 
 // StartConsuming enters a loop and waits for incoming messages
-func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable, taskProcessor iface.TaskProcessor) (bool, error) {
+func (b *Broker) StartConsuming(consumerTag string, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) (bool, error) {
 	b.consumingWG.Add(1)
 	defer b.consumingWG.Done()
 
@@ -271,7 +271,7 @@ func (b *Broker) GetDelayedTasks() ([]*tasks.Signature, error) {
 
 // consume takes delivered messages from the channel and manages a worker pool
 // to process tasks concurrently
-func (b *Broker) consume(deliveries <-chan []byte, taskProcessor iface.TaskProcessor, concurrency iface.Resizeable) error {
+func (b *Broker) consume(deliveries <-chan []byte, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool) error {
 	errorsChan := make(chan error)
 
 	for {

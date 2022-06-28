@@ -29,8 +29,8 @@ type Worker struct {
 	server      *Server
 	ConsumerTag string
 
-	Concurrency int
-	Capacity    iface.Resizeable // Allows an adjustable concurrency. Concurrency should not be specified if capacity is.
+	Concurrency           int
+	AdjustableConcurrency iface.ResizeablePool // Allows an adjustable concurrency. Concurrency should not be specified if capacity is.
 
 	Queue string
 	// errorHandler triggers on ALL errors, including boot, consume, etc.
@@ -85,7 +85,7 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 	// Goroutine to start broker consumption and handle retries when broker connection dies
 	go func() {
 		for {
-			concurrency := worker.Capacity
+			concurrency := worker.AdjustableConcurrency
 			var cancel func()
 
 			if worker.Concurrency != 0 {
@@ -95,7 +95,7 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 					return
 				}
 
-				concurrency, cancel = common.NewResizableWithStartingCapacity(worker.Concurrency)
+				concurrency, cancel = common.NewResizablePool(worker.Concurrency)
 			}
 
 			retry, err := broker.StartConsuming(worker.ConsumerTag, concurrency, worker)

@@ -60,7 +60,7 @@ func New(cnf *config.Config) iface.Broker {
 }
 
 // StartConsuming enters a loop and waits for incoming messages
-func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable, taskProcessor iface.TaskProcessor) (bool, error) {
+func (b *Broker) StartConsuming(consumerTag string, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) (bool, error) {
 	b.Broker.StartConsuming(consumerTag, taskProcessor)
 	qURL := b.getQueueURL(taskProcessor)
 	//save it so that it can be used later when attempting to delete task
@@ -225,7 +225,7 @@ func restrictVisibilityTimeoutDelay(delay time.Duration) time.Duration {
 }
 
 // consume is a method which keeps consuming deliveries from a channel, until there is an error or a stop signal
-func (b *Broker) consume(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.Resizeable) error {
+func (b *Broker) consume(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool) error {
 
 	errorsChan := make(chan error)
 
@@ -364,7 +364,7 @@ func (b *Broker) initializePool(pool chan struct{}, concurrency int) {
 }
 
 // consumeDeliveries is a method consuming deliveries from deliveries channel
-func (b *Broker) consumeDeliveries(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.Resizeable, errorsChan chan error) (bool, error) {
+func (b *Broker) consumeDeliveries(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool, errorsChan chan error) (bool, error) {
 	select {
 	case err := <-errorsChan:
 		return false, err

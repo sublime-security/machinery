@@ -78,7 +78,7 @@ func TestStopConsuming(t *testing.T) {
 
 func TestResizable(t *testing.T) {
 	capacity := 2
-	rs, cancel := common.NewResizableWithStartingCapacity(capacity)
+	rs, cancel := common.NewResizablePool(capacity)
 
 	pool := rs.Pool()
 

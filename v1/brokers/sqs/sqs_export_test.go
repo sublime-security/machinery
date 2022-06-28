@@ -146,7 +146,7 @@ func NewTestErrorBroker() *Broker {
 	}
 }
 
-func (b *Broker) ConsumeForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.Resizeable) error {
+func (b *Broker) ConsumeForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool) error {
 	return b.consume(deliveries, taskProcessor, concurrency)
 }
 
@@ -170,7 +170,7 @@ func (b *Broker) InitializePoolForTest(pool chan struct{}, concurrency int) {
 	b.initializePool(pool, concurrency)
 }
 
-func (b *Broker) ConsumeDeliveriesForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.Resizeable, errorsChan chan error) (bool, error) {
+func (b *Broker) ConsumeDeliveriesForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool, errorsChan chan error) (bool, error) {
 	return b.consumeDeliveries(deliveries, taskProcessor, concurrency, errorsChan)
 }
 
