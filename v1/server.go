@@ -92,6 +92,16 @@ func (server *Server) NewWorker(consumerTag string, concurrency int) *Worker {
 	}
 }
 
+// NewWorkerWithCapacity creates Worker instance and specified capacity
+func (server *Server) NewWorkerWithCapacity(consumerTag string, capacity brokersiface.Resizeable) *Worker {
+	return &Worker{
+		server:      server,
+		ConsumerTag: consumerTag,
+		Capacity:    capacity,
+		Queue:       "",
+	}
+}
+
 // NewCustomQueueWorker creates Worker instance with Custom Queue
 func (server *Server) NewCustomQueueWorker(consumerTag string, concurrency int, queue string) *Worker {
 	return &Worker{

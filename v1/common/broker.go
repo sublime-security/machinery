@@ -144,21 +144,20 @@ type resizableCapacity struct {
 	capacity int
 	taken    int
 
-	returnNotification chan struct{}
+	changeNotification chan struct{}
 }
 
 func NewResizableWithStartingCapacity(concurrency int) iface.Resizeable {
-	return &resizableCapacity{capacity: concurrency}
+	// TODO: the buffered channel could lockup on return. Make this crazy high or otherwise mitigate?
+	return &resizableCapacity{capacity: concurrency, changeNotification: make(chan struct{}, 100)}
 }
 
 func (p *resizableCapacity) Return() {
 	p.lock.Lock()
-	defer p.lock.Unlock()
+	p.taken--
+	p.lock.Unlock()
 
-	if p.taken < p.capacity {
-		p.taken--
-		p.returnNotification <- struct{}{}
-	}
+	p.changeNotification <- struct{}{}
 }
 
 func (p *resizableCapacity) Take() {
@@ -169,18 +168,47 @@ func (p *resizableCapacity) Take() {
 
 func (p *resizableCapacity) Lease() (<-chan struct{}, func()) {
 	p.lock.Lock()
+	defer p.lock.Unlock()
 
-	// Already capacity, don't create extra channels, funcs, etc
+	// Already has capacity, don't create extra channels, funcs, etc
 	if p.taken < p.capacity {
 		take := make(chan struct{}, 1)
+		p.taken++
 		take <- struct{}{}
-		defer p.lock.Unlock()
 		return take, func() {}
+	}
+
+	take := make(chan struct{}, 1)
+	cancelChan := make(chan struct{}, 1)
+
+	go func() {
+		for {
+			select {
+			case <-cancelChan:
+				return
+			case <-p.changeNotification:
+				p.lock.Lock()
+				if p.taken < p.capacity {
+					p.taken++
+
+					p.lock.Unlock()
+					take <- struct{}{}
+					return
+				}
+				p.lock.Unlock()
+			}
+		}
+	}()
+
+	return take, func() {
+		cancelChan <- struct{}{}
 	}
 }
 
 func (p *resizableCapacity) SetCapacity(desiredCap int) {
 	p.lock.Lock()
-	defer p.lock.Unlock()
 	p.capacity = desiredCap
+	p.lock.Unlock()
+
+	p.changeNotification <- struct{}{}
 }

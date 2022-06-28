@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/RichardKnop/machinery/v1/brokers/iface"
+
 	"github.com/RichardKnop/machinery/v1/common"
 
 	"github.com/opentracing/opentracing-go"
@@ -26,8 +28,11 @@ import (
 type Worker struct {
 	server      *Server
 	ConsumerTag string
+
 	Concurrency int
-	Queue       string
+	Capacity    iface.Resizeable // Allows an adjustable concurrency. Concurrency should not be specified if capacity is.
+
+	Queue string
 	// errorHandler triggers on ALL errors, including boot, consume, etc.
 	errorHandler func(err error)
 	// taskErrorHandler only triggers when a task returns an error
@@ -80,7 +85,18 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 	// Goroutine to start broker consumption and handle retries when broker connection dies
 	go func() {
 		for {
-			concurrency := common.NewResizableWithStartingCapacity(worker.Concurrency)
+			concurrency := worker.Capacity
+
+			if worker.Concurrency != 0 {
+				// Fail fast if both are specified to avoid confusion
+				if concurrency != nil {
+					errorsChan <- fmt.Errorf("concurrency should not be specified if capacity is")
+					return
+				}
+
+				concurrency = common.NewResizableWithStartingCapacity(worker.Concurrency)
+			}
+
 			retry, err := broker.StartConsuming(worker.ConsumerTag, concurrency, worker)
 
 			if retry {
