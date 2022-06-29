@@ -271,6 +271,7 @@ func (b *Broker) consume(deliveries <-chan amqp.Delivery, concurrency iface.Resi
 		case err := <-errorsChan:
 			return err
 		case d := <-deliveries:
+			// get worker from pool (blocks until one is available)
 			<-pool
 			b.processingWG.Add(1)
 

@@ -76,9 +76,9 @@ func TestStopConsuming(t *testing.T) {
 	})
 }
 
-func TestResizable(t *testing.T) {
-	capacity := 2
-	rs, cancel := common.NewResizablePool(capacity)
+func TestResizablePool(t *testing.T) {
+	expectedCapacity := 2
+	rs, cancel := common.NewResizablePool(expectedCapacity)
 
 	pool := rs.Pool()
 
@@ -102,7 +102,7 @@ func TestResizable(t *testing.T) {
 	acquireAll := func() {
 		st := time.Now()
 
-		for i := 0; i < capacity; i++ {
+		for i := 0; i < expectedCapacity; i++ {
 			<-pool
 		}
 
@@ -134,8 +134,8 @@ func TestResizable(t *testing.T) {
 		time.Sleep(time.Millisecond)
 		assert.False(t, didTake)
 
-		capacity++
-		rs.SetCapacity(capacity)
+		expectedCapacity++
+		rs.SetCapacity(expectedCapacity)
 		time.Sleep(time.Millisecond)
 		assert.True(t, didTake)
 
@@ -143,7 +143,7 @@ func TestResizable(t *testing.T) {
 	}
 	acquireBlocksTillAdd()
 
-	require.Equal(t, 3, capacity)
+	require.Equal(t, 3, expectedCapacity)
 
 	// Remove capacity
 	removeCapacity := func() {
@@ -154,8 +154,8 @@ func TestResizable(t *testing.T) {
 		time.Sleep(time.Millisecond)
 		assert.False(t, didTake)
 
-		capacity--
-		rs.SetCapacity(capacity)
+		expectedCapacity--
+		rs.SetCapacity(expectedCapacity)
 
 		time.Sleep(time.Millisecond)
 		assert.False(t, didTake)
@@ -165,7 +165,7 @@ func TestResizable(t *testing.T) {
 	removeCapacity()
 	removeCapacity()
 
-	require.Equal(t, 1, capacity)
+	require.Equal(t, 1, expectedCapacity)
 
 	returnAllCapacity := func(count int) {
 		st := time.Now()
