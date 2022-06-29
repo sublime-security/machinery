@@ -96,7 +96,7 @@ func (b *Broker) GetDelayedTasks() ([]*tasks.Signature, error) {
 }
 
 // StartConsuming is a common part of StartConsuming method
-func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcessor iface.TaskProcessor) {
+func (b *Broker) StartConsuming(consumerTag string, taskProcessor iface.TaskProcessor) {
 	if b.retryFunc == nil {
 		b.retryFunc = retry.Closure()
 	}
@@ -136,4 +136,102 @@ func (b *Broker) AdjustRoutingKey(s *tasks.Signature) {
 	}
 
 	s.RoutingKey = b.GetConfig().DefaultQueue
+}
+
+type resizableCapacity struct {
+	changes chan change
+
+	pool chan struct{}
+}
+
+type change struct {
+	isReturned bool
+	updatedCap *int
+}
+
+func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
+	rc := &resizableCapacity{
+		changes: make(chan change),
+		pool:    make(chan struct{}),
+	}
+
+	var (
+		// A separate routine is used to push any available capacity to the pool, when available. This channel allows
+		// cancelling the last function when available capacity changes (both to avoid leaking resources and so that
+		// capacity available at one point that wasn't used isn't given when capacity is lowered.
+		lastGiverCancel chan struct{}
+
+		capacity int
+		taken    int
+
+		// Used to cancel the background routine/release resources
+		cancelChan = make(chan struct{}, 1)
+	)
+
+	// Use a routine to coordinate changes (either returned capacity or changed capacity)
+	// This allows the different paths to both ultimately control a single channel that can be used as a normal
+	// capacity pool channel.
+	go func() {
+		for {
+			select {
+			case <-cancelChan:
+				if lastGiverCancel != nil {
+					lastGiverCancel <- struct{}{}
+				}
+
+				return
+			case c := <-rc.changes:
+				// Kill the function that might be giving capacity -- a new function will be started if any is available
+				if lastGiverCancel != nil {
+					lastGiverCancel <- struct{}{}
+					lastGiverCancel = nil
+				}
+
+				// Calculate what's available based on the change
+				if c.isReturned {
+					taken--
+				}
+				if c.updatedCap != nil {
+					capacity = *c.updatedCap
+				}
+				canGive := capacity - taken
+
+				if canGive > 0 {
+					// Launch a cancellable function which will populate the pool when there's a listener
+					// This must be a separate routine to ensure changes can occur even if there's no listener on the
+					// pool.
+					lastGiverCancel = make(chan struct{}, 1)
+
+					go func() {
+						for i := 0; i < canGive; i++ {
+							select {
+							case <-lastGiverCancel:
+								return
+							case rc.pool <- struct{}{}:
+								taken++
+							}
+						}
+					}()
+				}
+			}
+		}
+	}()
+
+	rc.SetCapacity(startingCapacity)
+
+	return rc, func() {
+		cancelChan <- struct{}{}
+	}
+}
+
+func (p *resizableCapacity) Return() {
+	p.changes <- change{isReturned: true}
+}
+
+func (p *resizableCapacity) Pool() <-chan struct{} {
+	return p.pool
+}
+
+func (p *resizableCapacity) SetCapacity(desiredCap int) {
+	p.changes <- change{updatedCap: &desiredCap}
 }

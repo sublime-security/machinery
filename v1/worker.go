@@ -10,6 +10,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/RichardKnop/machinery/v1/brokers/iface"
+
+	"github.com/RichardKnop/machinery/v1/common"
+
 	"github.com/opentracing/opentracing-go"
 
 	"github.com/RichardKnop/machinery/v1/backends/amqp"
@@ -24,8 +28,11 @@ import (
 type Worker struct {
 	server      *Server
 	ConsumerTag string
-	Concurrency int
-	Queue       string
+
+	Concurrency           int
+	AdjustableConcurrency iface.ResizeablePool // Allows an adjustable concurrency. Concurrency should not be specified if capacity is.
+
+	Queue string
 	// errorHandler triggers on ALL errors, including boot, consume, etc.
 	errorHandler func(err error)
 	// taskErrorHandler only triggers when a task returns an error
@@ -78,8 +85,24 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 	// Goroutine to start broker consumption and handle retries when broker connection dies
 	go func() {
 		for {
-			retry, err := broker.StartConsuming(worker.ConsumerTag, worker.Concurrency, worker)
+			concurrency := worker.AdjustableConcurrency
+			var cancel func()
 
+			if worker.Concurrency != 0 {
+				// Fail fast if both are specified to avoid confusion
+				if concurrency != nil {
+					errorsChan <- fmt.Errorf("concurrency should not be specified if capacity is")
+					return
+				}
+
+				concurrency, cancel = common.NewResizablePool(worker.Concurrency)
+			}
+
+			retry, err := broker.StartConsuming(worker.ConsumerTag, concurrency, worker)
+
+			if cancel != nil {
+				cancel()
+			}
 			if retry {
 				if worker.errorHandler != nil {
 					worker.errorHandler(err)
@@ -91,6 +114,7 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 				errorsChan <- err // stop the goroutine
 				return
 			}
+
 		}
 	}()
 	if !cnf.NoUnixSignals {

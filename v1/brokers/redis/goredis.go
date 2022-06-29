@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,15 +66,11 @@ func NewGR(cnf *config.Config, addrs []string, db int) iface.Broker {
 }
 
 // StartConsuming enters a loop and waits for incoming messages
-func (b *BrokerGR) StartConsuming(consumerTag string, concurrency int, taskProcessor iface.TaskProcessor) (bool, error) {
+func (b *BrokerGR) StartConsuming(consumerTag string, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) (bool, error) {
 	b.consumingWG.Add(1)
 	defer b.consumingWG.Done()
 
-	if concurrency < 1 {
-		concurrency = runtime.NumCPU() * 2
-	}
-
-	b.Broker.StartConsuming(consumerTag, concurrency, taskProcessor)
+	b.Broker.StartConsuming(consumerTag, taskProcessor)
 
 	// Ping the server to make sure connection is live
 	_, err := b.rclient.Ping(context.Background()).Result()
@@ -93,13 +88,7 @@ func (b *BrokerGR) StartConsuming(consumerTag string, concurrency int, taskProce
 	}
 
 	// Channel to which we will push tasks ready for processing by worker
-	deliveries := make(chan []byte, concurrency)
-	pool := make(chan struct{}, concurrency)
-
-	// initialize worker pool with maxWorkers workers
-	for i := 0; i < concurrency; i++ {
-		pool <- struct{}{}
-	}
+	deliveries := make(chan []byte)
 
 	// A receiving goroutine keeps popping messages from the queue by BLPOP
 	// If the message is valid and can be unmarshaled into a proper structure
@@ -107,6 +96,8 @@ func (b *BrokerGR) StartConsuming(consumerTag string, concurrency int, taskProce
 	go func() {
 
 		log.INFO.Print("[*] Waiting for messages. To exit press CTRL+C")
+
+		pool := concurrency.Pool()
 
 		for {
 			select {
@@ -120,8 +111,6 @@ func (b *BrokerGR) StartConsuming(consumerTag string, concurrency int, taskProce
 				if len(task) > 0 {
 					deliveries <- task
 				}
-
-				pool <- struct{}{}
 			}
 		}
 	}()
@@ -256,16 +245,8 @@ func (b *BrokerGR) GetDelayedTasks() ([]*tasks.Signature, error) {
 
 // consume takes delivered messages from the channel and manages a worker pool
 // to process tasks concurrently
-func (b *BrokerGR) consume(deliveries <-chan []byte, concurrency int, taskProcessor iface.TaskProcessor) error {
-	errorsChan := make(chan error, concurrency*2)
-	pool := make(chan struct{}, concurrency)
-
-	// init pool for Worker tasks execution, as many slots as Worker concurrency param
-	go func() {
-		for i := 0; i < concurrency; i++ {
-			pool <- struct{}{}
-		}
-	}()
+func (b *BrokerGR) consume(deliveries <-chan []byte, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) error {
+	errorsChan := make(chan error)
 
 	for {
 		select {
@@ -274,10 +255,6 @@ func (b *BrokerGR) consume(deliveries <-chan []byte, concurrency int, taskProces
 		case d, open := <-deliveries:
 			if !open {
 				return nil
-			}
-			if concurrency > 0 {
-				// get execution slot from pool (blocks until one is available)
-				<-pool
 			}
 
 			b.processingWG.Add(1)
@@ -291,10 +268,7 @@ func (b *BrokerGR) consume(deliveries <-chan []byte, concurrency int, taskProces
 
 				b.processingWG.Done()
 
-				if concurrency > 0 {
-					// give slot back to pool
-					pool <- struct{}{}
-				}
+				concurrency.Return()
 			}()
 		}
 	}

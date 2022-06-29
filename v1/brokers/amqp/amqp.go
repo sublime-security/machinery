@@ -44,8 +44,8 @@ func New(cnf *config.Config) iface.Broker {
 }
 
 // StartConsuming enters a loop and waits for incoming messages
-func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcessor iface.TaskProcessor) (bool, error) {
-	b.Broker.StartConsuming(consumerTag, concurrency, taskProcessor)
+func (b *Broker) StartConsuming(consumerTag string, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) (bool, error) {
+	b.Broker.StartConsuming(consumerTag, taskProcessor)
 
 	queueName := taskProcessor.CustomQueue()
 	if queueName == "" {
@@ -256,20 +256,13 @@ func (b *Broker) extend(time.Duration, *tasks.Signature) error {
 
 // consume takes delivered messages from the channel and manages a worker pool
 // to process tasks concurrently
-func (b *Broker) consume(deliveries <-chan amqp.Delivery, concurrency int, taskProcessor iface.TaskProcessor, amqpCloseChan <-chan *amqp.Error) error {
-	pool := make(chan struct{}, concurrency)
-
-	// initialize worker pool with maxWorkers workers
-	go func() {
-		for i := 0; i < concurrency; i++ {
-			pool <- struct{}{}
-		}
-	}()
-
+func (b *Broker) consume(deliveries <-chan amqp.Delivery, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor, amqpCloseChan <-chan *amqp.Error) error {
 	// make channel with a capacity makes it become a buffered channel so that a worker which wants to
 	// push an error to `errorsChan` doesn't need to be blocked while the for-loop is blocked waiting
 	// a worker, that is, it avoids a possible deadlock
 	errorsChan := make(chan error, 1)
+
+	pool := concurrency.Pool()
 
 	for {
 		select {
@@ -278,11 +271,8 @@ func (b *Broker) consume(deliveries <-chan amqp.Delivery, concurrency int, taskP
 		case err := <-errorsChan:
 			return err
 		case d := <-deliveries:
-			if concurrency > 0 {
-				// get worker from pool (blocks until one is available)
-				<-pool
-			}
-
+			// get worker from pool (blocks until one is available)
+			<-pool
 			b.processingWG.Add(1)
 
 			// Consume the task inside a gotourine so multiple tasks
@@ -294,10 +284,7 @@ func (b *Broker) consume(deliveries <-chan amqp.Delivery, concurrency int, taskP
 
 				b.processingWG.Done()
 
-				if concurrency > 0 {
-					// give worker back to pool
-					pool <- struct{}{}
-				}
+				concurrency.Return()
 			}()
 		case <-b.GetStopChan():
 			return nil

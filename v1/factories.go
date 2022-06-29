@@ -13,7 +13,6 @@ import (
 
 	amqpbroker "github.com/RichardKnop/machinery/v1/brokers/amqp"
 	eagerbroker "github.com/RichardKnop/machinery/v1/brokers/eager"
-	gcppubsubbroker "github.com/RichardKnop/machinery/v1/brokers/gcppubsub"
 	brokeriface "github.com/RichardKnop/machinery/v1/brokers/iface"
 	redisbroker "github.com/RichardKnop/machinery/v1/brokers/redis"
 	sqsbroker "github.com/RichardKnop/machinery/v1/brokers/sqs"
@@ -94,14 +93,6 @@ func BrokerFactory(cnf *config.Config) (brokeriface.Broker, error) {
 		if strings.HasPrefix(cnf.Broker, "https://sqs") {
 			return sqsbroker.New(cnf), nil
 		}
-	}
-
-	if strings.HasPrefix(cnf.Broker, "gcppubsub://") {
-		projectID, subscriptionName, err := ParseGCPPubSubURL(cnf.Broker)
-		if err != nil {
-			return nil, err
-		}
-		return gcppubsubbroker.New(cnf, projectID, subscriptionName)
 	}
 
 	return nil, fmt.Errorf("Factory failed with broker URL: %v", cnf.Broker)

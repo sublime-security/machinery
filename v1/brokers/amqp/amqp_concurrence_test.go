@@ -2,17 +2,20 @@ package amqp
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
+	"github.com/RichardKnop/machinery/v1/common"
+
 	"github.com/RichardKnop/machinery/v1/brokers/iface"
 	"github.com/RichardKnop/machinery/v1/config"
 	"github.com/RichardKnop/machinery/v1/tasks"
 	"github.com/streadway/amqp"
-	"testing"
-	"time"
 )
 
 type doNothingProcessor struct{}
 
-func (_ doNothingProcessor) Process(signature *tasks.Signature) error {
+func (_ doNothingProcessor) Process(signature *tasks.Signature, extendFunc tasks.ExtendForSignatureFunc) error {
 	return fmt.Errorf("failed")
 }
 
@@ -45,7 +48,7 @@ func TestConsume(t *testing.T) {
 		}()
 
 		go func() {
-			err := broker.consume(deliveries, 2, processor, closeChan)
+			err := broker.consume(deliveries, common.NewResizablePool(2), processor, closeChan)
 			if err != nil {
 				errChan <- err
 			}

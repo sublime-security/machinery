@@ -2,6 +2,9 @@ package common_test
 
 import (
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/RichardKnop/machinery/v1"
 	"github.com/RichardKnop/machinery/v1/common"
@@ -63,7 +66,7 @@ func TestStopConsuming(t *testing.T) {
 		broker := common.NewBroker(&config.Config{
 			DefaultQueue: "queue",
 		})
-		broker.StartConsuming("", 1, &machinery.Worker{})
+		broker.StartConsuming("", &machinery.Worker{})
 		broker.StopConsuming()
 		select {
 		case <-broker.GetStopChan():
@@ -71,4 +74,117 @@ func TestStopConsuming(t *testing.T) {
 			assert.Fail(t, "still blocking")
 		}
 	})
+}
+
+func TestResizablePool(t *testing.T) {
+	expectedCapacity := 2
+	rs, cancel := common.NewResizablePool(expectedCapacity)
+
+	pool := rs.Pool()
+
+	tryAcquire := func(didTake *bool) func() {
+		cc := make(chan struct{}, 1)
+
+		go func() {
+			select {
+			case <-pool:
+				*didTake = true
+			case <-cc:
+				return
+			}
+		}()
+
+		return func() {
+			cc <- struct{}{}
+		}
+	}
+
+	acquireAll := func() {
+		st := time.Now()
+
+		for i := 0; i < expectedCapacity; i++ {
+			<-pool
+		}
+
+		assert.Less(t, time.Since(st), time.Millisecond)
+	}
+	acquireAll()
+
+	acquireBlockTillReturn := func() {
+		var didTake bool
+
+		cc := tryAcquire(&didTake)
+
+		time.Sleep(time.Millisecond)
+		assert.False(t, didTake)
+
+		rs.Return()
+		time.Sleep(time.Millisecond)
+		assert.True(t, didTake)
+
+		cc()
+	}
+	acquireBlockTillReturn()
+
+	acquireBlocksTillAdd := func() {
+		var didTake bool
+
+		cc := tryAcquire(&didTake)
+
+		time.Sleep(time.Millisecond)
+		assert.False(t, didTake)
+
+		expectedCapacity++
+		rs.SetCapacity(expectedCapacity)
+		time.Sleep(time.Millisecond)
+		assert.True(t, didTake)
+
+		cc()
+	}
+	acquireBlocksTillAdd()
+
+	require.Equal(t, 3, expectedCapacity)
+
+	// Remove capacity
+	removeCapacity := func() {
+		var didTake bool
+
+		cc := tryAcquire(&didTake)
+
+		time.Sleep(time.Millisecond)
+		assert.False(t, didTake)
+
+		expectedCapacity--
+		rs.SetCapacity(expectedCapacity)
+
+		time.Sleep(time.Millisecond)
+		assert.False(t, didTake)
+
+		cc()
+	}
+	removeCapacity()
+	removeCapacity()
+
+	require.Equal(t, 1, expectedCapacity)
+
+	returnAllCapacity := func(count int) {
+		st := time.Now()
+
+		for i := 0; i < count; i++ {
+			rs.Return()
+		}
+
+		assert.Less(t, time.Since(st), time.Millisecond)
+	}
+	// Capacity is 1, but 2 additional slots are held from before capacity was reduced.
+	returnAllCapacity(3)
+
+	acquireAll()
+	removeCapacity()
+	returnAllCapacity(1)
+	removeCapacity()
+	returnAllCapacity(1)
+	acquireBlocksTillAdd()
+
+	cancel()
 }
