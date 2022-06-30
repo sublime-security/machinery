@@ -110,6 +110,8 @@ func (b *BrokerGR) StartConsuming(consumerTag string, concurrency iface.Resizeab
 				//TODO: should this error be ignored?
 				if len(task) > 0 {
 					deliveries <- task
+				} else {
+					concurrency.Return()
 				}
 			}
 		}
