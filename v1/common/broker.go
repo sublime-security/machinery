@@ -190,16 +190,37 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 					lastGiverCancel = nil
 				}
 
-				// Calculate what's available based on the change
-				if c.isReturned {
-					taken--
+				var changeDoneChannels []chan struct{}
+				countChange := func(c change) {
+					if c.isReturned {
+						taken--
+					}
+					if c.isTaken {
+						taken++
+					}
+					if c.updatedCap != nil {
+						capacity = *c.updatedCap
+					}
+
+					if c.changeDone != nil {
+						changeDoneChannels = append(changeDoneChannels, c.changeDone)
+					}
 				}
-				if c.isTaken {
-					taken++
+
+				countChange(c)
+
+				// Loop until changes is empty. This ensures all the most recent
+			drainChannel:
+				for {
+					select {
+					case c := <-rc.changes:
+						countChange(c)
+					default:
+						break drainChannel
+					}
 				}
-				if c.updatedCap != nil {
-					capacity = *c.updatedCap
-				}
+
+				// Calculate what's available based on all the changes
 				canGive := capacity - taken
 
 				if canGive > 0 {
@@ -210,8 +231,9 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 
 					go func() {
 						// If both <-lastGiverCancel and rc.pool <- there will be a 50/50 chance of either
-						// occurring. The select above reduces the odds of this happening, but it is possible to
-						// give 1 when lastGiverCancel has an element if rc.pool is eligible at the "same" time.
+						// occurring. This could lead to a capacity being given even after capacity is reduced, but only
+						// in a pretty rare race condition and is materially no different than setCapacity being called
+						// a moment later.
 						select {
 						case <-lastGiverCancel:
 							return
@@ -221,8 +243,8 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 					}()
 				}
 
-				if c.changeDone != nil {
-					c.changeDone <- struct{}{}
+				for _, c := range changeDoneChannels {
+					c <- struct{}{}
 				}
 			}
 		}
