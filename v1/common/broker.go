@@ -3,6 +3,7 @@ package common
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/RichardKnop/machinery/v1/brokers/iface"
 	"github.com/RichardKnop/machinery/v1/config"
@@ -163,8 +164,8 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 		// capacity available at one point that wasn't used isn't given when capacity is lowered.
 		lastGiverCancel chan struct{}
 
-		capacity int
-		taken    int
+		capacity int64
+		taken    int64
 
 		// Used to cancel the background routine/release resources
 		cancelChan = make(chan struct{}, 1)
@@ -191,12 +192,12 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 
 				// Calculate what's available based on the change
 				if c.isReturned {
-					taken--
+					atomic.AddInt64(&taken, -1)
 				}
 				if c.updatedCap != nil {
-					capacity = *c.updatedCap
+					capacity = int64(*c.updatedCap)
 				}
-				canGive := capacity - taken
+				canGive := capacity - atomic.LoadInt64(&taken)
 
 				if canGive > 0 {
 					// Launch a cancellable function which will populate the pool when there's a listener
@@ -205,12 +206,21 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 					lastGiverCancel = make(chan struct{}, 1)
 
 					go func() {
-						for i := 0; i < canGive; i++ {
+						for i := 0; i < int(canGive); i++ {
+							select {
+							case <-lastGiverCancel:
+								return
+							default:
+							}
+
+							// If both <-lastGiverCancel and rc.pool <- there will be a 50/50 chance of either
+							// occurring. The select above reduces the odds of this happening, but it is possible to
+							// give 1 when lastGiverCancel has an element if rc.pool is eligible at the "same" time.
 							select {
 							case <-lastGiverCancel:
 								return
 							case rc.pool <- struct{}{}:
-								taken++
+								atomic.AddInt64(&taken, 1)
 							}
 						}
 					}()
