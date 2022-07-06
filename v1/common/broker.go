@@ -162,7 +162,8 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 		// A separate routine is used to push any available capacity to the pool, when available. This channel allows
 		// cancelling the last function when available capacity changes (both to avoid leaking resources and so that
 		// capacity available at one point that wasn't used isn't given when capacity is lowered.
-		lastGiverCancel chan struct{}
+		lastGiverCancel      chan struct{}
+		lastGiverHasCanceled chan struct{}
 
 		capacity int
 		taken    int
@@ -209,27 +210,55 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 
 				countChange(c)
 
-				// Loop until changes is empty. This ensures all the most recent
-			drainChannel:
-				for {
-					select {
-					case c := <-rc.changes:
-						countChange(c)
-					default:
-						break drainChannel
+				// Loop until changes is empty. This ensures all the most recent changes are counted before we provide
+				// capacity again.
+				drainDone := make(chan struct{})
+				go func() {
+					defer func() {
+						drainDone <- struct{}{}
+					}()
+
+					for {
+						select {
+						case c := <-rc.changes:
+							countChange(c)
+							continue
+						default:
+						}
+
+						if lastGiverCancel == nil {
+							return
+						}
+
+						// When the giver function exits it will communicate through lastGiverHasCanceled, so that
+						// we know it's totally finished. If it ends up giving capacity to the pool, it will push a
+						// change at the same time: we must listen to rc.changes to ensure this doesn't deadlock.
+						select {
+						case c := <-rc.changes:
+							countChange(c)
+						case <-lastGiverHasCanceled:
+							lastGiverHasCanceled = nil
+							return
+						}
 					}
-				}
+				}()
+
+				<-drainDone
 
 				// Calculate what's available based on all the changes
 				canGive := capacity - taken
 
 				if canGive > 0 {
-					// Launch a cancellable function which will populate the pool when there's a listener
+					lastGiverCancel = make(chan struct{}, 1)
+					lastGiverHasCanceled = make(chan struct{}, 1)
+
+					// Launch a cancellable function, the "giver", which will populate the pool when there's a listener
 					// This must be a separate routine to ensure changes can occur even if there's no listener on the
 					// pool.
-					lastGiverCancel = make(chan struct{}, 1)
-
 					go func() {
+						defer func() {
+							lastGiverHasCanceled <- struct{}{}
+						}()
 						// If both <-lastGiverCancel and rc.pool <- there will be a 50/50 chance of either
 						// occurring. This could lead to a capacity being given even after capacity is reduced, but only
 						// in a pretty rare race condition and is materially no different than setCapacity being called
