@@ -184,7 +184,7 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 func (b *Broker) extend(by time.Duration, signature *tasks.Signature) error {
 	b.AdjustRoutingKey(signature)
 
-	by = restrictVisibilityTimeoutDelay(by)
+	by = restrictVisibilityTimeoutDelay(by, signature.ReceivedAt)
 
 	visibilityInput := &awssqs.ChangeMessageVisibilityInput{
 		QueueUrl:          aws.String(b.GetConfig().Broker + "/" + signature.RoutingKey),
@@ -200,7 +200,13 @@ func (b *Broker) RetryMessage(signature *tasks.Signature) {
 	b.AdjustRoutingKey(signature)
 
 	delay := signature.ETA.Sub(time.Now().UTC())
-	delay = restrictVisibilityTimeoutDelay(delay)
+	delay = restrictVisibilityTimeoutDelay(delay, signature.ReceivedAt)
+
+	// Just return if the visibility timeout will be rounded to 0. ErrStopTaskDeletion can also be used if no delay
+	// change is needed.
+	if delay < time.Second {
+		return
+	}
 
 	visibilityInput := &awssqs.ChangeMessageVisibilityInput{
 		QueueUrl:          aws.String(b.GetConfig().Broker + "/" + signature.RoutingKey),
@@ -214,13 +220,21 @@ func (b *Broker) RetryMessage(signature *tasks.Signature) {
 	}
 }
 
-func restrictVisibilityTimeoutDelay(delay time.Duration) time.Duration {
+func restrictVisibilityTimeoutDelay(delay time.Duration, receivedAt time.Time) time.Duration {
 	if delay > maxAWSSQSVisibilityTimeout {
 		log.ERROR.Printf("attempted to retry a message with invalid delay: %s. using max.", delay.String())
 		delay = maxAWSSQSVisibilityTimeout
 	} else if delay < 0 {
 		delay = 0
 	}
+
+	// Messages can process a max of 12 hours, and attempting to set the visibility timeout beyond that will
+	// result in an error.
+	runningTime := time.Since(receivedAt)
+	if timeOverMax := (maxAWSSQSVisibilityTimeout - time.Minute) - (runningTime + delay); timeOverMax < 0 {
+		delay += timeOverMax
+	}
+
 	return delay
 }
 
@@ -258,6 +272,9 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 		}
 		return err
 	}
+
+	sig.ReceivedAt = time.Now()
+
 	if delivery.Messages[0].ReceiptHandle != nil {
 		sig.SQSReceiptHandle = *delivery.Messages[0].ReceiptHandle
 	}
@@ -273,6 +290,14 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 		if i, err := strconv.ParseInt(*sentTimeSinceEpochMilliString, 10, 64); err == nil {
 			t := time.UnixMilli(i)
 			sig.IngestionTime = &t
+		}
+	}
+
+	estimateFirstReceivedMilliString := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameApproximateFirstReceiveTimestamp]
+	if estimateFirstReceivedMilliString != nil {
+		if i, err := strconv.ParseInt(*estimateFirstReceivedMilliString, 10, 64); err == nil {
+			t := time.UnixMilli(i)
+			sig.FirstReceived = &t
 		}
 	}
 

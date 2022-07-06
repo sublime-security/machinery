@@ -50,6 +50,8 @@ type Signature struct {
 	RoutingKey     string
 	ETA            *time.Time
 	IngestionTime  *time.Time
+	FirstReceived  *time.Time
+	ReceivedAt     time.Time
 	GroupUUID      string
 	GroupTaskCount int
 	Args           []Arg
