@@ -26,7 +26,9 @@ type ResizeablePool interface {
 
 	Pool() <-chan struct{}
 
-	SetCapacity(int)
+	// SetCapacity Returns a channel which will receive a value when the change has been fully accepted. Most users should ignore
+	// this.
+	SetCapacity(int) <-chan struct{}
 }
 
 type RetrySameMessage interface {

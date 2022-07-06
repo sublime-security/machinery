@@ -1,0 +1,540 @@
+=== RUN   TestResizablePoolConcurrency
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_1ms
+
+
+At capacity 98.57 %
+Below capacity 0.71 %
+Above capacity 0.71 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_3ms
+
+
+At capacity 99.24 %
+Below capacity 0.00 %
+Above capacity 0.76 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_77ms
+
+
+At capacity 100.00 %
+Below capacity 0.00 %
+Above capacity 0.00 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_333ms
+
+
+At capacity 57.58 %
+Below capacity 1.01 %
+Above capacity 41.41 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_1s
+
+
+At capacity 31.90 %
+Below capacity 2.59 %
+Above capacity 65.52 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_1.001s
+
+
+At capacity 32.35 %
+Below capacity 0.98 %
+Above capacity 66.67 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_1.1s
+
+
+At capacity 100.00 %
+Below capacity 0.00 %
+Above capacity 0.00 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_500ms
+
+
+At capacity 64.84 %
+Below capacity 1.10 %
+Above capacity 34.07 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_501ms
+
+
+At capacity 90.24 %
+Below capacity 1.22 %
+Above capacity 8.54 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_600ms
+
+
+At capacity 97.53 %
+Below capacity 0.00 %
+Above capacity 2.47 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1s
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1.001s
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1.1s
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_500ms
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_501ms
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_600ms
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1s
+
+
+At capacity 43.21 %
+Below capacity 0.00 %
+Above capacity 56.79 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1.001s
+
+
+At capacity 40.26 %
+Below capacity 3.90 %
+Above capacity 55.84 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1.1s
+
+
+At capacity 36.25 %
+Below capacity 1.25 %
+Above capacity 62.50 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_500ms
+
+
+At capacity 34.15 %
+Below capacity 1.22 %
+Above capacity 64.63 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_501ms
+
+
+At capacity 40.51 %
+Below capacity 0.00 %
+Above capacity 59.49 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_600ms
+
+
+At capacity 24.14 %
+Below capacity 1.15 %
+Above capacity 74.71 %  
+----
+
+
+Rolling Results.
+WorstAboveCap 
+rolling. Sleep 1.001s
+At capacity 32.35 %
+Below capacity 0.98 %
+Above capacity 66.67 %  
+----
+
+WorstNotAtCap 
+rolling. Sleep 1s
+At capacity 31.90 %
+Below capacity 2.59 %
+Above capacity 65.52 %  
+----
+
+Avg 
+
+At capacity 76.96 %
+Below capacity 0.78 %
+Above capacity 22.25 %  
+----
+
+
+Constant Results.
+WorstAboveCap 
+Constant cap at 0. Sleep 1s
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+WorstNotAtCap 
+Constant cap at 0. Sleep 1s
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+Avg 
+
+At capacity 36.21 %
+Below capacity 1.23 %
+Above capacity 62.55 %  
+----
+
+
+Combined Results.
+WorstAboveCap 
+Constant cap at 2. Sleep 600ms
+At capacity 24.14 %
+Below capacity 1.15 %
+Above capacity 74.71 %  
+----
+
+WorstNotAtCap 
+Constant cap at 2. Sleep 600ms
+At capacity 24.14 %
+Below capacity 1.15 %
+Above capacity 74.71 %  
+----
+
+Avg 
+
+At capacity 63.81 %
+Below capacity 0.93 %
+Above capacity 35.26 %  
+----
+
+--- PASS: TestResizablePoolConcurrency (665.56s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_1ms (34.88s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_3ms (33.01s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_77ms (31.01s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_333ms (30.13s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_1s (30.09s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_1.001s (29.08s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_1.1s (29.80s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_500ms (30.08s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_501ms (29.61s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_600ms (30.10s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1s (30.08s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1.001s (29.10s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1.1s (29.78s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_500ms (30.14s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_501ms (29.71s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_600ms (30.13s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1s (30.08s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1.001s (29.09s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1.1s (29.77s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_500ms (30.11s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_501ms (29.67s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_600ms (30.12s)
+=== RUN   TestResizablePoolConcurrency
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_1ms
+
+
+At capacity 95.17 %
+Below capacity 0.00 %
+Above capacity 4.83 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_3ms
+
+
+At capacity 97.79 %
+Below capacity 0.74 %
+Above capacity 1.47 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_77ms
+
+
+At capacity 100.00 %
+Below capacity 0.00 %
+Above capacity 0.00 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_333ms
+
+
+At capacity 65.62 %
+Below capacity 0.00 %
+Above capacity 34.38 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_1s
+
+
+At capacity 40.21 %
+Below capacity 2.06 %
+Above capacity 57.73 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_1.001s
+
+
+At capacity 46.24 %
+Below capacity 1.08 %
+Above capacity 52.69 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_1.1s
+
+
+At capacity 100.00 %
+Below capacity 0.00 %
+Above capacity 0.00 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_500ms
+
+
+At capacity 63.22 %
+Below capacity 4.60 %
+Above capacity 32.18 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_501ms
+
+
+At capacity 86.59 %
+Below capacity 1.22 %
+Above capacity 12.20 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/rolling._Sleep_600ms
+
+
+At capacity 83.72 %
+Below capacity 0.00 %
+Above capacity 16.28 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1s
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1.001s
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1.1s
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_500ms
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_501ms
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_600ms
+
+
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1s
+
+
+At capacity 39.02 %
+Below capacity 0.00 %
+Above capacity 60.98 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1.001s
+
+
+At capacity 32.53 %
+Below capacity 2.41 %
+Above capacity 65.06 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1.1s
+
+
+At capacity 45.57 %
+Below capacity 2.53 %
+Above capacity 51.90 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_500ms
+
+
+At capacity 30.49 %
+Below capacity 1.22 %
+Above capacity 68.29 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_501ms
+
+
+At capacity 36.90 %
+Below capacity 0.00 %
+Above capacity 63.10 %  
+----
+
+=== RUN   TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_600ms
+
+
+At capacity 35.37 %
+Below capacity 0.00 %
+Above capacity 64.63 %  
+----
+
+
+Rolling Results.
+WorstAboveCap 
+rolling. Sleep 1s
+At capacity 40.21 %
+Below capacity 2.06 %
+Above capacity 57.73 %  
+----
+
+WorstNotAtCap 
+rolling. Sleep 1s
+At capacity 40.21 %
+Below capacity 2.06 %
+Above capacity 57.73 %  
+----
+
+Avg 
+
+At capacity 79.18 %
+Below capacity 0.90 %
+Above capacity 19.92 %  
+----
+
+
+Constant Results.
+WorstAboveCap 
+Constant cap at 0. Sleep 1s
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+WorstNotAtCap 
+Constant cap at 0. Sleep 1s
+At capacity NaN %
+Below capacity NaN %
+Above capacity NaN %  
+----
+
+Avg 
+
+At capacity 36.59 %
+Below capacity 1.02 %
+Above capacity 62.40 %  
+----
+
+
+Combined Results.
+WorstAboveCap 
+Constant cap at 2. Sleep 500ms
+At capacity 30.49 %
+Below capacity 1.22 %
+Above capacity 68.29 %  
+----
+
+WorstNotAtCap 
+Constant cap at 2. Sleep 500ms
+At capacity 30.49 %
+Below capacity 1.22 %
+Above capacity 68.29 %  
+----
+
+Avg 
+
+At capacity 65.12 %
+Below capacity 0.94 %
+Above capacity 33.94 %  
+----
+
+--- PASS: TestResizablePoolConcurrency (666.12s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_1ms (35.56s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_3ms (33.26s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_77ms (30.85s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_333ms (30.11s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_1s (30.06s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_1.001s (29.08s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_1.1s (29.74s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_500ms (30.11s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_501ms (29.62s)
+    --- PASS: TestResizablePoolConcurrency/rolling._Sleep_600ms (30.09s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1s (30.07s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1.001s (29.10s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_1.1s (29.77s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_500ms (30.12s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_501ms (29.69s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_0._Sleep_600ms (30.10s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1s (30.08s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1.001s (29.07s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_1.1s (29.75s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_500ms (30.10s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_501ms (29.68s)
+    --- PASS: TestResizablePoolConcurrency/Constant_cap_at_2._Sleep_600ms (30.09s)
+PASS
+ok  	github.com/RichardKnop/machinery/v1/common	1332.153s

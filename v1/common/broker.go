@@ -147,6 +147,8 @@ type resizableCapacity struct {
 type change struct {
 	isReturned bool
 	updatedCap *int
+
+	changeDone chan struct{}
 }
 
 func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
@@ -213,6 +215,10 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 						}
 					}()
 				}
+
+				if c.changeDone != nil {
+					c.changeDone <- struct{}{}
+				}
 			}
 		}
 	}()
@@ -232,6 +238,10 @@ func (p *resizableCapacity) Pool() <-chan struct{} {
 	return p.pool
 }
 
-func (p *resizableCapacity) SetCapacity(desiredCap int) {
-	p.changes <- change{updatedCap: &desiredCap}
+func (p *resizableCapacity) SetCapacity(desiredCap int) <-chan struct{} {
+	capacityAccepted := make(chan struct{}, 1)
+
+	p.changes <- change{updatedCap: &desiredCap, changeDone: capacityAccepted}
+
+	return capacityAccepted
 }
