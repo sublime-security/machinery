@@ -148,8 +148,8 @@ type change struct {
 	isReturned bool
 	isTaken    bool
 	updatedCap *int
-
 	changeDone chan struct{}
+	giverEnded bool
 }
 
 func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
@@ -160,10 +160,9 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 
 	var (
 		// A separate routine is used to push any available capacity to the pool, when available. This channel allows
-		// cancelling the last function when available capacity changes (both to avoid leaking resources and so that
-		// capacity available at one point that wasn't used isn't given when capacity is lowered.
-		lastGiverCancel      chan struct{}
-		lastGiverHasCanceled chan struct{}
+		// cancelling the last function if capacity is now longer available.
+		cancelLastGiver chan struct{}
+		giverRunning    bool
 
 		capacity int
 		taken    int
@@ -179,20 +178,20 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 		for {
 			select {
 			case <-cancelChan:
-				if lastGiverCancel != nil {
-					lastGiverCancel <- struct{}{}
+				if cancelLastGiver != nil {
+					cancelLastGiver <- struct{}{}
 				}
 
 				return
 			case c := <-rc.changes:
-				// Kill the function that might be giving capacity -- a new function will be started if any is available
-				if lastGiverCancel != nil {
-					lastGiverCancel <- struct{}{}
-					lastGiverCancel = nil
-				}
+				giverEnded := false
 
 				var changeDoneChannels []chan struct{}
 				countChange := func(c change) {
+					if c.giverEnded {
+						giverEnded = true
+					}
+
 					if c.isReturned {
 						taken--
 					}
@@ -209,72 +208,71 @@ func NewResizablePool(startingCapacity int) (iface.ResizeablePool, func()) {
 				}
 
 				countChange(c)
-
-				// Loop until changes is empty. This ensures all the most recent changes are counted before we provide
-				// capacity again.
-				drainDone := make(chan struct{})
-				go func() {
-					defer func() {
-						drainDone <- struct{}{}
-					}()
-
-					for {
-						select {
-						case c := <-rc.changes:
-							countChange(c)
-							continue
-						default:
-						}
-
-						if lastGiverCancel == nil {
-							return
-						}
-
-						// When the giver function exits it will communicate through lastGiverHasCanceled, so that
-						// we know it's totally finished. If it ends up giving capacity to the pool, it will push a
-						// change at the same time: we must listen to rc.changes to ensure this doesn't deadlock.
-						select {
-						case c := <-rc.changes:
-							countChange(c)
-						case <-lastGiverHasCanceled:
-							lastGiverHasCanceled = nil
-							return
-						}
+				for {
+					select {
+					case c := <-rc.changes:
+						countChange(c)
+						continue
+					default:
 					}
-				}()
 
-				<-drainDone
+					break
+				}
+
+				giverRunning = giverRunning && !giverEnded
 
 				// Calculate what's available based on all the changes
 				canGive := capacity - taken
 
-				if canGive > 0 {
-					lastGiverCancel = make(chan struct{}, 1)
-					lastGiverHasCanceled = make(chan struct{}, 1)
+				giverWanted := canGive > 0
 
-					// Launch a cancellable function, the "giver", which will populate the pool when there's a listener
-					// This must be a separate routine to ensure changes can occur even if there's no listener on the
-					// pool.
-					go func() {
-						defer func() {
-							lastGiverHasCanceled <- struct{}{}
-						}()
-						// If both <-lastGiverCancel and rc.pool <- there will be a 50/50 chance of either
-						// occurring. This could lead to a capacity being given even after capacity is reduced, but only
-						// in a pretty rare race condition and is materially no different than setCapacity being called
-						// a moment later.
-						select {
-						case <-lastGiverCancel:
-							return
-						case rc.pool <- struct{}{}:
-							rc.changes <- change{isTaken: true}
-						}
-					}()
+				// Call at the end of the iteration or anytime we continue
+				deferIter := func() {
+					for _, c := range changeDoneChannels {
+						c <- struct{}{}
+					}
 				}
 
-				for _, c := range changeDoneChannels {
-					c <- struct{}{}
+				if !giverWanted {
+					// Cancel if available (it might be the first run, or several runs since a giver was launched)
+					// giverRunning will be updated on end.
+					if cancelLastGiver != nil {
+						cancelLastGiver <- struct{}{}
+						cancelLastGiver = nil
+					}
+					deferIter()
+					continue
 				}
+
+				// No update necessary, avoid race conditions on trying to cancel the giver/create a new one to do the
+				// same thing. If the last giver is *just* finishing, it will be queueing a change which will bring
+				// everything back to the correct state.
+				if giverRunning {
+					deferIter()
+					continue
+				}
+
+				// Launch a cancellable function, the "giver", which will populate the pool when there's a listener
+				// This must be a separate routine to ensure changes can occur even if there's no listener on the
+				// pool.
+				giverRunning = true
+				cancelLastGiver = make(chan struct{}, 1)
+
+				go func() {
+					// If both <-cancelLastGiver and rc.pool <- there will be a 50/50 chance of either
+					// occurring. This could lead to a capacity being given even after capacity is reduced, but only
+					// in a pretty rare race condition and is materially no different than setCapacity being called
+					// a moment later.
+					select {
+					case <-cancelLastGiver:
+						rc.changes <- change{giverEnded: true}
+						return
+					case rc.pool <- struct{}{}:
+						rc.changes <- change{isTaken: true, giverEnded: true}
+					}
+				}()
+
+				deferIter()
 			}
 		}
 	}()
