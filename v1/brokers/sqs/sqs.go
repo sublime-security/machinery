@@ -310,6 +310,10 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 		return fmt.Errorf("task %s is not registered", sig.Name)
 	}
 
+	// Always set the routing key based on the processor. This ensures it's set to the queue it's pulled off of, even
+	// if the message was originally on another queue (it can be moved automatically to a DLQ).
+	sig.RoutingKey = b.getQueueName(taskProcessor)
+
 	err := taskProcessor.Process(sig, b.extend)
 	if err != nil {
 		// stop task deletion in case we want to send messages to dlq in sqs or retry from visibility timeout
@@ -444,10 +448,15 @@ func (b *Broker) stopReceiving() {
 // getQueueURL is a method returns that returns queueURL first by checking if custom queue was set and usign it
 // otherwise using default queueName from config
 func (b *Broker) getQueueURL(taskProcessor iface.TaskProcessor) *string {
+	queueName := b.getQueueName(taskProcessor)
+
+	return aws.String(b.GetConfig().Broker + "/" + queueName)
+}
+
+func (b *Broker) getQueueName(taskProcessor iface.TaskProcessor) string {
 	queueName := b.GetConfig().DefaultQueue
 	if taskProcessor.CustomQueue() != "" {
 		queueName = taskProcessor.CustomQueue()
 	}
-
-	return aws.String(b.GetConfig().Broker + "/" + queueName)
+	return queueName
 }
