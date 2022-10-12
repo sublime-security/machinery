@@ -227,6 +227,10 @@ func restrictVisibilityTimeoutDelay(delay time.Duration, receivedAt time.Time) t
 	runningTime := time.Since(receivedAt)
 	if timeOverMax := (maxAWSSQSVisibilityTimeout - time.Minute) - (runningTime + delay); timeOverMax < 0 {
 		delay += timeOverMax
+
+		if delay < 0 {
+			delay = 0
+		}
 	}
 
 	return delay
