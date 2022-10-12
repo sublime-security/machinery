@@ -220,6 +220,11 @@ func (worker *Worker) Process(signature *tasks.Signature, extendFunc tasks.Exten
 			return worker.keepAndRetryTaskIn(signature, keepAndRetryErr.RetryIn())
 		}
 
+		// Allow tasks to use errs.ErrStopTaskDeletion
+		if errors.Is(err, errs.ErrStopTaskDeletion) {
+			return err
+		}
+
 		// Otherwise, execute default retry logic based on signature.RetryCount
 		// and signature.RetryTimeout values
 		if signature.RetryCount > 0 {
