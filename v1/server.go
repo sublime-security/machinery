@@ -198,6 +198,10 @@ func (server *Server) SendTaskWithContext(ctx context.Context, signature *tasks.
 		signature.Headers = tracing.HeadersWithSpan(signature.Headers, span)
 	}
 
+	if signature.ETA != nil {
+		span.SetTag("signature.eta", signature.ETA.String())
+	}
+
 	// Make sure result backend is defined
 	if server.backend == nil {
 		return nil, errors.New("Result backend required")

@@ -202,12 +202,6 @@ func (b *Broker) RetryMessage(signature *tasks.Signature) {
 	delay := signature.ETA.Sub(time.Now().UTC())
 	delay = restrictVisibilityTimeoutDelay(delay, signature.ReceivedAt)
 
-	// Just return if the visibility timeout will be rounded to 0. ErrStopTaskDeletion can also be used if no delay
-	// change is needed.
-	if delay < time.Second {
-		return
-	}
-
 	visibilityInput := &awssqs.ChangeMessageVisibilityInput{
 		QueueUrl:          aws.String(b.GetConfig().Broker + "/" + signature.RoutingKey),
 		ReceiptHandle:     &signature.SQSReceiptHandle,
@@ -216,7 +210,7 @@ func (b *Broker) RetryMessage(signature *tasks.Signature) {
 
 	_, err := b.service.ChangeMessageVisibility(visibilityInput)
 	if err != nil {
-		log.ERROR.Printf("ignoring error attempting to change visibility timeout. will re-attempt after default period. task %s", signature.UUID)
+		log.ERROR.Printf("ignoring error attempting to change visibility timeout. will re-attempt after default period. task %s (%s)", signature.UUID, signature.Name)
 	}
 }
 
