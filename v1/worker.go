@@ -255,7 +255,7 @@ func (worker *Worker) taskRetry(signature *tasks.Signature) error {
 	eta := time.Now().UTC().Add(time.Second * time.Duration(signature.RetryTimeout))
 	signature.ETA = &eta
 
-	log.WARNING.Printf("Task %s failed. Going to retry in %d seconds.", signature.UUID, signature.RetryTimeout)
+	log.INFO.Printf("Task %s failed. Going to retry in %d seconds.", signature.UUID, signature.RetryTimeout)
 
 	// Send the task back to the queue
 	_, err := worker.server.SendTask(signature)
@@ -276,7 +276,7 @@ func (worker *Worker) retryTaskIn(signature *tasks.Signature, retryIn time.Durat
 	// Increase the attempt count, but leave RetryCount alone because it's for the default retry behavior.
 	signature.AttemptCount++
 
-	log.WARNING.Printf("Task %s (%s) failed. Going to retry in %.0f seconds, attempt count %d.", signature.UUID, signature.Name, retryIn.Seconds(), signature.AttemptCount)
+	log.INFO.Printf("Task %s (%s) failed. Going to retry in %.0f seconds, attempt count %d.", signature.UUID, signature.Name, retryIn.Seconds(), signature.AttemptCount)
 
 	// Send the task back to the queue
 	_, err := worker.server.SendTask(signature)
@@ -298,7 +298,7 @@ func (worker *Worker) keepAndRetryTaskIn(signature *tasks.Signature, retryIn tim
 	// only matter if the broker does not support RetryMessage and falls back to sending a new task.
 	signature.AttemptCount++
 
-	log.WARNING.Printf("Task %s (%s) failed. Going to retry in %.0f seconds, attempt count %d. Attempting to keep message.", signature.UUID, signature.Name, retryIn.Seconds(), signature.AttemptCount)
+	log.INFO.Printf("Task %s (%s) failed. Going to retry in %.0f seconds, attempt count %d. Attempting to keep message.", signature.UUID, signature.Name, retryIn.Seconds(), signature.AttemptCount)
 
 	return worker.server.RetryTaskAt(signature)
 }
