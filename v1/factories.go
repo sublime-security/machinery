@@ -22,7 +22,6 @@ import (
 	eagerbackend "github.com/RichardKnop/machinery/v1/backends/eager"
 	backendiface "github.com/RichardKnop/machinery/v1/backends/iface"
 	memcachebackend "github.com/RichardKnop/machinery/v1/backends/memcache"
-	mongobackend "github.com/RichardKnop/machinery/v1/backends/mongo"
 	nullbackend "github.com/RichardKnop/machinery/v1/backends/null"
 	redisbackend "github.com/RichardKnop/machinery/v1/backends/redis"
 
@@ -151,11 +150,6 @@ func BackendFactory(cnf *config.Config) (backendiface.Backend, error) {
 		}
 
 		return redisbackend.New(cnf, "", redisPassword, redisSocket, redisDB), nil
-	}
-
-	if strings.HasPrefix(cnf.ResultBackend, "mongodb://") ||
-		strings.HasPrefix(cnf.ResultBackend, "mongodb+srv://") {
-		return mongobackend.New(cnf)
 	}
 
 	if strings.HasPrefix(cnf.ResultBackend, "eager") {

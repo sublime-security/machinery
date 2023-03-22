@@ -9,7 +9,6 @@ import (
 	"cloud.google.com/go/pubsub"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 const (
@@ -155,12 +154,6 @@ type RedisConfig struct {
 type GCPPubSubConfig struct {
 	Client       *pubsub.Client
 	MaxExtension time.Duration
-}
-
-// MongoDBConfig ...
-type MongoDBConfig struct {
-	Client   *mongo.Client
-	Database string
 }
 
 // Decode from yaml to map (any field whose type or pointer-to-type implements
