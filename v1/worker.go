@@ -214,26 +214,34 @@ func (worker *Worker) Process(signature *tasks.Signature, extendFunc tasks.Exten
 		// retry the task after specified duration
 		retryTaskLaterErr, ok := interface{}(err).(tasks.ErrRetryTaskLater)
 		if ok {
-			worker.taskRetryErrorHandler(err, signature)
+			if worker.taskRetryErrorHandler != nil {
+				worker.taskRetryErrorHandler(err, signature)
+			}
 			return worker.retryTaskIn(signature, retryTaskLaterErr.RetryIn())
 		}
 
 		keepAndRetryErr, ok := interface{}(err).(tasks.ErrKeepAndRetryTaskLater)
 		if ok {
-			worker.taskRetryErrorHandler(err, signature)
+			if worker.taskRetryErrorHandler != nil {
+				worker.taskRetryErrorHandler(err, signature)
+			}
 			return worker.keepAndRetryTaskIn(signature, keepAndRetryErr.RetryIn())
 		}
 
 		// Allow tasks to use errs.ErrStopTaskDeletion
 		if errors.Is(err, errs.ErrStopTaskDeletion) {
-			worker.taskRetryErrorHandler(err, signature)
+			if worker.taskRetryErrorHandler != nil {
+				worker.taskRetryErrorHandler(err, signature)
+			}
 			return err
 		}
 
 		// Otherwise, execute default retry logic based on signature.RetryCount
 		// and signature.RetryTimeout values
 		if signature.RetryCount > 0 {
-			worker.taskRetryErrorHandler(err, signature)
+			if worker.taskRetryErrorHandler != nil {
+				worker.taskRetryErrorHandler(err, signature)
+			}
 			return worker.taskRetry(signature)
 		}
 
