@@ -8,15 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-redis/redis/v8"
-	"github.com/go-redsync/redsync/v4"
-	redsyncgoredis "github.com/go-redsync/redsync/v4/redis/goredis/v8"
-
 	"github.com/RichardKnop/machinery/v2/backends/iface"
 	"github.com/RichardKnop/machinery/v2/common"
 	"github.com/RichardKnop/machinery/v2/config"
 	"github.com/RichardKnop/machinery/v2/log"
 	"github.com/RichardKnop/machinery/v2/tasks"
+	"github.com/go-redis/redis"
+	"github.com/go-redsync/redsync/v4"
+	redsyncgoredis "github.com/go-redsync/redsync/v4/redis/goredis/v9"
 )
 
 // BackendGR represents a Redis result backend

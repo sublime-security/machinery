@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/RichardKnop/machinery/v2/config"
-	"github.com/go-redis/redis/v8"
+	"github.com/go-redis/redis"
 )
 
 var (
