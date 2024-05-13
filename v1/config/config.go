@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/sqs"
 )
@@ -60,6 +61,7 @@ type Config struct {
 	ResultsExpireIn         int              `yaml:"results_expire_in" envconfig:"RESULTS_EXPIRE_IN"`
 	AMQP                    *AMQPConfig      `yaml:"amqp"`
 	SQS                     *SQSConfig       `yaml:"sqs"`
+	Azure                   *AzureConfig     `yaml:"azure"`
 	Redis                   *RedisConfig     `yaml:"redis"`
 	GCPPubSub               *GCPPubSubConfig `yaml:"-" ignored:"true"`
 	TLSConfig               *tls.Config
@@ -99,6 +101,14 @@ type SQSConfig struct {
 	// https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-visibility-timeout.html
 	// visibility timeout should default to nil to use the overall visibility timeout for the queue
 	VisibilityTimeout *int `yaml:"receive_visibility_timeout" envconfig:"SQS_VISIBILITY_TIMEOUT"`
+}
+
+type AzureConfig struct {
+	Client *azqueue.QueueClient
+	// Max time a message can stay in the queue (set on send)
+	TTL time.Duration
+	// Visibility timeout, same concept as SQS, how long to exclusively hold the message.
+	VisibilityTimeout time.Duration
 }
 
 // RedisConfig ...

@@ -1,31 +1,24 @@
-package sqs
+package azure
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue"
 	"github.com/RichardKnop/machinery/v1/brokers/errs"
 	"github.com/RichardKnop/machinery/v1/brokers/iface"
 	"github.com/RichardKnop/machinery/v1/common"
 	"github.com/RichardKnop/machinery/v1/config"
 	"github.com/RichardKnop/machinery/v1/log"
 	"github.com/RichardKnop/machinery/v1/tasks"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
-
-	awssqs "github.com/aws/aws-sdk-go/service/sqs"
 )
 
 const (
-	maxAWSSQSDelay             = time.Minute * 15 // Max supported SQS delay is 15 min: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_SendMessage.html
-	maxAWSSQSVisibilityTimeout = time.Hour * 12   // Max supported SQS visibility timeout is 12 hours: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ChangeMessageVisibility.html
+	maxDelay = time.Minute * 7 // Max supported Visibility Timeout
 )
 
 // Broker represents a AWS SQS broker
@@ -35,26 +28,14 @@ type Broker struct {
 	processingWG      sync.WaitGroup // use wait group to make sure task processing completes on interrupt signal
 	receivingWG       sync.WaitGroup
 	stopReceivingChan chan int
-	sess              *session.Session
-	service           sqsiface.SQSAPI
-	queueUrl          *string
+	cfg               config.AzureConfig
+	queueName         string
 }
 
 // New creates new Broker instance
 func New(cnf *config.Config) iface.Broker {
 	b := &Broker{Broker: common.NewBroker(cnf)}
-	if cnf.SQS != nil && cnf.SQS.Client != nil {
-		// Use provided *SQS client
-		b.service = cnf.SQS.Client
-	} else {
-		// Initialize a session that the SDK will use to load credentials from the shared credentials file, ~/.aws/credentials.
-		// See details on: https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/configuring-sdk.html
-		// Also, env AWS_REGION is also required
-		b.sess = session.Must(session.NewSessionWithOptions(session.Options{
-			SharedConfigState: session.SharedConfigEnable,
-		}))
-		b.service = awssqs.New(b.sess)
-	}
+	b.cfg = *cnf.Azure
 
 	return b
 }
@@ -62,11 +43,8 @@ func New(cnf *config.Config) iface.Broker {
 // StartConsuming enters a loop and waits for incoming messages
 func (b *Broker) StartConsuming(consumerTag string, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) (bool, error) {
 	b.Broker.StartConsuming(consumerTag, taskProcessor)
-	qURL := b.getQueueURL(taskProcessor)
-	//save it so that it can be used later when attempting to delete task
-	b.queueUrl = qURL
 
-	deliveries := make(chan *awssqs.ReceiveMessageOutput)
+	deliveries := make(chan azqueue.DequeueMessagesResponse)
 
 	b.stopReceivingChan = make(chan int)
 	b.receivingWG.Add(1)
@@ -74,7 +52,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 	go func() {
 		defer b.receivingWG.Done()
 
-		log.INFO.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", *qURL)
+		log.INFO.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", b.queueName)
 
 		pool := concurrency.Pool()
 
@@ -86,18 +64,13 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 
 				return
 			case <-pool:
-				output, err := b.receiveMessage(qURL)
+				output, err := b.receiveMessage()
 				if err == nil && len(output.Messages) > 0 {
 					deliveries <- output
 
 				} else {
 					if err != nil {
-						log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
-
-						// Avoid repeating this
-						if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
-							time.Sleep(30 * time.Second)
-						}
+						log.ERROR.Printf("Queue consume error on %s: %s", b.queueName, err)
 					}
 					//return back to pool right away
 					concurrency.Return()
@@ -136,108 +109,80 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 	// Check that signature.RoutingKey is set, if not switch to DefaultQueue
 	b.AdjustRoutingKey(signature)
 
-	MsgInput := &awssqs.SendMessageInput{
-		MessageBody: aws.String(string(msg)),
-		QueueUrl:    aws.String(b.GetConfig().Broker + "/" + signature.RoutingKey),
-	}
-
-	// if this is a fifo queue, there needs to be some additional parameters.
-	if strings.HasSuffix(signature.RoutingKey, ".fifo") {
-		// Use Machinery's signature Task UUID as SQS Message Group ID.
-		MsgDedupID := signature.UUID
-		MsgInput.MessageDeduplicationId = aws.String(MsgDedupID)
-
-		// Do not Use Machinery's signature Group UUID as SQS Message Group ID, instead use BrokerMessageGroupId
-		MsgGroupID := signature.BrokerMessageGroupId
-		if MsgGroupID == "" {
-			return fmt.Errorf("please specify BrokerMessageGroupId attribute for task Signature when submitting a task to FIFO queue")
-		}
-		MsgInput.MessageGroupId = aws.String(MsgGroupID)
-	}
+	messageBody := string(msg)
+	enqueueOptions := &azqueue.EnqueueMessageOptions{}
 
 	// Check the ETA signature field, if it is set and it is in the future,
 	// and is not a fifo queue, set a delay in seconds for the task.
-	if signature.ETA != nil && !strings.HasSuffix(signature.RoutingKey, ".fifo") {
+	if signature.ETA != nil {
 		now := time.Now().UTC()
 		delay := signature.ETA.Sub(now)
 		if delay > 0 {
-			if delay > maxAWSSQSDelay {
-				log.ERROR.Printf("max AWS SQS delay exceeded sending %s. defaulting to max.", signature.Name)
-				delay = maxAWSSQSDelay
+			if delay > maxDelay {
+				log.ERROR.Printf("max visibility timeout exceeded sending %s. defaulting to max.", signature.Name)
+				delay = maxDelay
 			}
-			MsgInput.DelaySeconds = aws.Int64(int64(delay.Seconds()))
+			delaysS := int32(delay.Seconds())
+			enqueueOptions.VisibilityTimeout = &delaysS
 		}
 	}
 
-	result, err := b.service.SendMessageWithContext(ctx, MsgInput)
+	ttlSeconds := int32(b.cfg.TTL.Seconds())
+	enqueueOptions.TimeToLive = &ttlSeconds
+
+	result, err := b.cfg.Client.EnqueueMessage(ctx, messageBody, enqueueOptions)
 
 	if err != nil {
 		log.ERROR.Printf("Error when sending a message: %v", err)
 		return err
-
+	} else if len(result.Messages) != 1 {
+		err := fmt.Errorf("unexpected result message count %d", len(result.Messages))
+		log.ERROR.Printf("%v", err)
+		return err
 	}
-	log.INFO.Printf("Sending a message successfully, the messageId is %v", *result.MessageId)
-	return nil
 
+	log.INFO.Printf("Sending a message successfully, the messageId is %v", *result.Messages[0].MessageID)
+	return nil
 }
 
 func (b *Broker) extend(by time.Duration, signature *tasks.Signature) error {
 	b.AdjustRoutingKey(signature)
 
-	by = restrictVisibilityTimeoutDelay(by, signature.ReceivedAt)
+	delayS := int32(by.Seconds())
 
-	visibilityInput := &awssqs.ChangeMessageVisibilityInput{
-		QueueUrl:          aws.String(b.GetConfig().Broker + "/" + signature.RoutingKey),
-		ReceiptHandle:     &signature.SQSReceiptHandle,
-		VisibilityTimeout: aws.Int64(int64(by.Seconds())),
+	_, err := b.cfg.Client.UpdateMessage(
+		context.Background(),
+		signature.AzureMessageID,
+		signature.AzurePopReceipt,
+		signature.AzureMessageContent,
+		&azqueue.UpdateMessageOptions{VisibilityTimeout: &delayS})
+	if err != nil {
+		log.ERROR.Printf("ignoring error attempting to change visibility timeout. will re-attempt after default period. task %s (%s)", signature.UUID, signature.Name)
 	}
 
-	_, err := b.service.ChangeMessageVisibility(visibilityInput)
-	return err
+	return nil
 }
 
 func (b *Broker) RetryMessage(signature *tasks.Signature) {
 	b.AdjustRoutingKey(signature)
 
 	delay := signature.ETA.Sub(time.Now().UTC())
-	delay = restrictVisibilityTimeoutDelay(delay, signature.ReceivedAt)
 
-	visibilityInput := &awssqs.ChangeMessageVisibilityInput{
-		QueueUrl:          aws.String(b.GetConfig().Broker + "/" + signature.RoutingKey),
-		ReceiptHandle:     &signature.SQSReceiptHandle,
-		VisibilityTimeout: aws.Int64(int64(delay.Seconds())),
-	}
+	delayS := int32(delay.Seconds())
 
-	_, err := b.service.ChangeMessageVisibility(visibilityInput)
+	_, err := b.cfg.Client.UpdateMessage(
+		context.Background(),
+		signature.AzureMessageID,
+		signature.AzurePopReceipt,
+		signature.AzureMessageContent,
+		&azqueue.UpdateMessageOptions{VisibilityTimeout: &delayS})
 	if err != nil {
 		log.ERROR.Printf("ignoring error attempting to change visibility timeout. will re-attempt after default period. task %s (%s)", signature.UUID, signature.Name)
 	}
 }
 
-func restrictVisibilityTimeoutDelay(delay time.Duration, receivedAt time.Time) time.Duration {
-	if delay > maxAWSSQSVisibilityTimeout {
-		log.ERROR.Printf("attempted to retry a message with invalid delay: %s. using max.", delay.String())
-		delay = maxAWSSQSVisibilityTimeout
-	} else if delay < 0 {
-		delay = 0
-	}
-
-	// Messages can process a max of 12 hours, and attempting to set the visibility timeout beyond that will
-	// result in an error.
-	runningTime := time.Since(receivedAt)
-	if timeOverMax := (maxAWSSQSVisibilityTimeout - time.Minute) - (runningTime + delay); timeOverMax < 0 {
-		delay += timeOverMax
-
-		if delay < 0 {
-			delay = 0
-		}
-	}
-
-	return delay
-}
-
 // consume is a method which keeps consuming deliveries from a channel, until there is an error or a stop signal
-func (b *Broker) consume(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool) error {
+func (b *Broker) consume(deliveries <-chan azqueue.DequeueMessagesResponse, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool) error {
 
 	errorsChan := make(chan error)
 
@@ -253,64 +198,51 @@ func (b *Broker) consume(deliveries <-chan *awssqs.ReceiveMessageOutput, taskPro
 }
 
 // consumeOne is a method consumes a delivery. If a delivery was consumed successfully, it will be deleted from AWS SQS
-func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor) error {
+func (b *Broker) consumeOne(delivery azqueue.DequeueMessagesResponse, taskProcessor iface.TaskProcessor) error {
 	if len(delivery.Messages) == 0 {
 		log.ERROR.Printf("received an empty message, the delivery was %v", delivery)
-		return errors.New("received empty message, the delivery is " + delivery.GoString())
+		return fmt.Errorf("received empty message, the delivery is %v", delivery)
 	}
 
+	msg := delivery.Messages[0]
+
 	sig := new(tasks.Signature)
-	decoder := json.NewDecoder(strings.NewReader(*delivery.Messages[0].Body))
+	decoder := json.NewDecoder(strings.NewReader(*msg.MessageText))
 	decoder.UseNumber()
 	if err := decoder.Decode(sig); err != nil {
 		log.ERROR.Printf("unmarshal error. the delivery is %v", delivery)
 		// if the unmarshal fails, remove the delivery from the queue
-		if delErr := b.deleteOne(delivery); delErr != nil {
+		if delErr := b.deleteOne(msg); delErr != nil {
 			log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, delErr)
 		}
 		return err
 	}
 
 	sig.ReceivedAt = time.Now()
+	sig.AzureMessageContent = *msg.MessageText
 
-	if delivery.Messages[0].ReceiptHandle != nil {
-		sig.SQSReceiptHandle = *delivery.Messages[0].ReceiptHandle
+	if msg.PopReceipt != nil {
+		sig.AzurePopReceipt = *msg.PopReceipt
 	}
 
-	if receiveCount := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameApproximateReceiveCount]; receiveCount != nil {
-		if rc, err := strconv.ParseInt(*receiveCount, 10, 64); err == nil {
-			sig.AttemptCount = int(rc) - 1 // SQS receive count includes this attempt, but AttemptCount goes from 0
-		}
+	if msg.DequeueCount != nil {
+		sig.AttemptCount = int(*msg.DequeueCount) - 1 // receive count includes this attempt, but AttemptCount goes from 0
 	}
 
-	sentTimeSinceEpochMilliString := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameSentTimestamp]
-	if sentTimeSinceEpochMilliString != nil {
-		if i, err := strconv.ParseInt(*sentTimeSinceEpochMilliString, 10, 64); err == nil {
-			t := time.UnixMilli(i)
-			sig.IngestionTime = &t
-		}
-	}
-
-	estimateFirstReceivedMilliString := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameApproximateFirstReceiveTimestamp]
-	if estimateFirstReceivedMilliString != nil {
-		if i, err := strconv.ParseInt(*estimateFirstReceivedMilliString, 10, 64); err == nil {
-			t := time.UnixMilli(i)
-			sig.FirstReceived = &t
-		}
-	}
+	sig.IngestionTime = msg.InsertionTime
 
 	// If the task is not registered return an error
 	// and leave the message in the queue
 	if !b.IsTaskRegistered(sig.Name) {
 		if sig.IgnoreWhenTaskNotRegistered {
-			b.deleteOne(delivery)
+			b.deleteOne(msg)
 		}
 		return fmt.Errorf("task %s is not registered", sig.Name)
 	}
 
 	// Always set the routing key based on the processor. This ensures it's set to the queue it's pulled off of, even
 	// if the message was originally on another queue (it can be moved automatically to a DLQ).
-	sig.RoutingKey = b.getQueueName(taskProcessor)
+	sig.RoutingKey = b.queueName
 
 	err := taskProcessor.Process(sig, b.extend)
 	if err != nil {
@@ -321,19 +253,15 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 		return err
 	}
 	// Delete message after successfully consuming and processing the message
-	if err = b.deleteOne(delivery); err != nil {
+	if err = b.deleteOne(msg); err != nil {
 		log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, err)
 	}
 	return err
 }
 
 // deleteOne is a method delete a delivery from AWS SQS
-func (b *Broker) deleteOne(delivery *awssqs.ReceiveMessageOutput) error {
-	qURL := b.defaultQueueURL()
-	_, err := b.service.DeleteMessage(&awssqs.DeleteMessageInput{
-		QueueUrl:      qURL,
-		ReceiptHandle: delivery.Messages[0].ReceiptHandle,
-	})
+func (b *Broker) deleteOne(message *azqueue.DequeuedMessage) error {
+	_, err := b.cfg.Client.DeleteMessage(context.Background(), *message.MessageID, *message.PopReceipt, nil)
 
 	if err != nil {
 		return err
@@ -341,46 +269,15 @@ func (b *Broker) deleteOne(delivery *awssqs.ReceiveMessageOutput) error {
 	return nil
 }
 
-// defaultQueueURL is a method returns the default queue url
-func (b *Broker) defaultQueueURL() *string {
-	if b.queueUrl != nil {
-		return b.queueUrl
-	} else {
-		return aws.String(b.GetConfig().Broker + "/" + b.GetConfig().DefaultQueue)
-	}
-
-}
-
 // receiveMessage is a method receives a message from specified queue url
-func (b *Broker) receiveMessage(qURL *string) (*awssqs.ReceiveMessageOutput, error) {
-	var waitTimeSeconds int
-	var visibilityTimeout *int
-	if b.GetConfig().SQS != nil {
-		waitTimeSeconds = b.GetConfig().SQS.WaitTimeSeconds
-		visibilityTimeout = b.GetConfig().SQS.VisibilityTimeout
-	} else {
-		waitTimeSeconds = 0
-	}
-	input := &awssqs.ReceiveMessageInput{
-		AttributeNames: []*string{
-			aws.String(awssqs.MessageSystemAttributeNameSentTimestamp),
-			aws.String(awssqs.MessageSystemAttributeNameApproximateReceiveCount),
-		},
-		MessageAttributeNames: []*string{
-			aws.String(awssqs.QueueAttributeNameAll),
-		},
-		QueueUrl:            qURL,
-		MaxNumberOfMessages: aws.Int64(1),
-		WaitTimeSeconds:     aws.Int64(int64(waitTimeSeconds)),
-	}
-	if visibilityTimeout != nil {
-		input.VisibilityTimeout = aws.Int64(int64(*visibilityTimeout))
-	}
-	result, err := b.service.ReceiveMessage(input)
+func (b *Broker) receiveMessage() (azqueue.DequeueMessagesResponse, error) {
+	visibilityTimeoutS := int32(b.cfg.VisibilityTimeout.Seconds())
+	result, err := b.cfg.Client.DequeueMessage(context.Background(), &azqueue.DequeueMessageOptions{VisibilityTimeout: &visibilityTimeoutS})
 	if err != nil {
-		return nil, err
+		return azqueue.DequeueMessagesResponse{}, err
 	}
-	return result, err
+
+	return result, nil
 }
 
 // initializePool is a method which initializes concurrency pool
@@ -391,7 +288,7 @@ func (b *Broker) initializePool(pool chan struct{}, concurrency int) {
 }
 
 // consumeDeliveries is a method consuming deliveries from deliveries channel
-func (b *Broker) consumeDeliveries(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool, errorsChan chan error) (bool, error) {
+func (b *Broker) consumeDeliveries(deliveries <-chan azqueue.DequeueMessagesResponse, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool, errorsChan chan error) (bool, error) {
 	select {
 	case err := <-errorsChan:
 		return false, err
@@ -418,37 +315,10 @@ func (b *Broker) consumeDeliveries(deliveries <-chan *awssqs.ReceiveMessageOutpu
 	return true, nil
 }
 
-// continueReceivingMessages is a method returns a continue signal
-func (b *Broker) continueReceivingMessages(qURL *string, deliveries chan *awssqs.ReceiveMessageOutput) (bool, error) {
-	select {
-	// A way to stop this goroutine from b.StopConsuming
-	case <-b.stopReceivingChan:
-		return false, nil
-	default:
-		output, err := b.receiveMessage(qURL)
-		if err != nil {
-			return true, err
-		}
-		if len(output.Messages) == 0 {
-			return true, nil
-		}
-		go func() { deliveries <- output }()
-	}
-	return true, nil
-}
-
 // stopReceiving is a method sending a signal to stopReceivingChan
 func (b *Broker) stopReceiving() {
 	// Stop the receiving goroutine
 	b.stopReceivingChan <- 1
-}
-
-// getQueueURL is a method returns that returns queueURL first by checking if custom queue was set and usign it
-// otherwise using default queueName from config
-func (b *Broker) getQueueURL(taskProcessor iface.TaskProcessor) *string {
-	queueName := b.getQueueName(taskProcessor)
-
-	return aws.String(b.GetConfig().Broker + "/" + queueName)
 }
 
 func (b *Broker) getQueueName(taskProcessor iface.TaskProcessor) string {

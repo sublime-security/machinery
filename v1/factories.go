@@ -12,6 +12,7 @@ import (
 	"github.com/RichardKnop/machinery/v1/config"
 
 	amqpbroker "github.com/RichardKnop/machinery/v1/brokers/amqp"
+	azurebroker "github.com/RichardKnop/machinery/v1/brokers/azure"
 	eagerbroker "github.com/RichardKnop/machinery/v1/brokers/eager"
 	brokeriface "github.com/RichardKnop/machinery/v1/brokers/iface"
 	redisbroker "github.com/RichardKnop/machinery/v1/brokers/redis"
@@ -78,6 +79,10 @@ func BrokerFactory(cnf *config.Config) (brokeriface.Broker, error) {
 
 	if strings.HasPrefix(cnf.Broker, "eager") {
 		return eagerbroker.New(), nil
+	}
+
+	if strings.Contains(cnf.Broker, "queue.core.windows") {
+		return azurebroker.New(cnf), nil
 	}
 
 	if _, ok := os.LookupEnv("DISABLE_STRICT_SQS_CHECK"); ok {
