@@ -36,6 +36,7 @@ type Broker struct {
 func New(cnf *config.Config) iface.Broker {
 	b := &Broker{Broker: common.NewBroker(cnf)}
 	b.cfg = *cnf.Azure
+	b.queueName = cnf.DefaultQueue
 
 	return b
 }
@@ -130,7 +131,7 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 	ttlSeconds := int32(b.cfg.TTL.Seconds())
 	enqueueOptions.TimeToLive = &ttlSeconds
 
-	result, err := b.cfg.Client.EnqueueMessage(ctx, messageBody, enqueueOptions)
+	result, err := b.cfg.Client.NewQueueClient(signature.RoutingKey).EnqueueMessage(ctx, messageBody, enqueueOptions)
 
 	if err != nil {
 		log.ERROR.Printf("Error when sending a message: %v", err)
@@ -150,7 +151,7 @@ func (b *Broker) extend(by time.Duration, signature *tasks.Signature) error {
 
 	delayS := int32(by.Seconds())
 
-	_, err := b.cfg.Client.UpdateMessage(
+	_, err := b.cfg.Client.NewQueueClient(signature.RoutingKey).UpdateMessage(
 		context.Background(),
 		signature.AzureMessageID,
 		signature.AzurePopReceipt,
@@ -170,7 +171,7 @@ func (b *Broker) RetryMessage(signature *tasks.Signature) {
 
 	delayS := int32(delay.Seconds())
 
-	_, err := b.cfg.Client.UpdateMessage(
+	_, err := b.cfg.Client.NewQueueClient(signature.RoutingKey).UpdateMessage(
 		context.Background(),
 		signature.AzureMessageID,
 		signature.AzurePopReceipt,
@@ -261,7 +262,7 @@ func (b *Broker) consumeOne(delivery azqueue.DequeueMessagesResponse, taskProces
 
 // deleteOne is a method delete a delivery from AWS SQS
 func (b *Broker) deleteOne(message *azqueue.DequeuedMessage) error {
-	_, err := b.cfg.Client.DeleteMessage(context.Background(), *message.MessageID, *message.PopReceipt, nil)
+	_, err := b.cfg.Client.NewQueueClient(b.queueName).DeleteMessage(context.Background(), *message.MessageID, *message.PopReceipt, nil)
 
 	if err != nil {
 		return err
@@ -272,7 +273,7 @@ func (b *Broker) deleteOne(message *azqueue.DequeuedMessage) error {
 // receiveMessage is a method receives a message from specified queue url
 func (b *Broker) receiveMessage() (azqueue.DequeueMessagesResponse, error) {
 	visibilityTimeoutS := int32(b.cfg.VisibilityTimeout.Seconds())
-	result, err := b.cfg.Client.DequeueMessage(context.Background(), &azqueue.DequeueMessageOptions{VisibilityTimeout: &visibilityTimeoutS})
+	result, err := b.cfg.Client.NewQueueClient(b.queueName).DequeueMessage(context.Background(), &azqueue.DequeueMessageOptions{VisibilityTimeout: &visibilityTimeoutS})
 	if err != nil {
 		return azqueue.DequeueMessagesResponse{}, err
 	}
@@ -319,12 +320,4 @@ func (b *Broker) consumeDeliveries(deliveries <-chan azqueue.DequeueMessagesResp
 func (b *Broker) stopReceiving() {
 	// Stop the receiving goroutine
 	b.stopReceivingChan <- 1
-}
-
-func (b *Broker) getQueueName(taskProcessor iface.TaskProcessor) string {
-	queueName := b.GetConfig().DefaultQueue
-	if taskProcessor.CustomQueue() != "" {
-		queueName = taskProcessor.CustomQueue()
-	}
-	return queueName
 }

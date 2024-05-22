@@ -104,7 +104,7 @@ type SQSConfig struct {
 }
 
 type AzureConfig struct {
-	Client *azqueue.QueueClient
+	Client *azqueue.ServiceClient
 	// Max time a message can stay in the queue (set on send)
 	TTL time.Duration
 	// Visibility timeout, same concept as SQS, how long to exclusively hold the message.
