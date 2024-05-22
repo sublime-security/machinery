@@ -69,6 +69,11 @@ type Signature struct {
 	BrokerMessageGroupId string
 	//ReceiptHandle of SQS Message
 	SQSReceiptHandle string
+
+	AzureMessageID      string
+	AzurePopReceipt     string
+	AzureMessageContent string
+
 	// StopTaskDeletionOnError used with sqs when we want to send failed messages to dlq,
 	// and don't want machinery to delete from source queue
 	StopTaskDeletionOnError bool
