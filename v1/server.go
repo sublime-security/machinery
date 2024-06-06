@@ -198,8 +198,8 @@ func (server *Server) SendTaskWithContext(ctx context.Context, signature *tasks.
 		signature.Headers = tracing.HeadersWithSpan(signature.Headers, span)
 	}
 
-	if signature.ETA != nil {
-		span.SetTag("signature.eta", signature.ETA.String())
+	if signature.Delay > 0 {
+		span.SetTag("signature.eta", signature.Delay.String())
 	}
 
 	// Make sure result backend is defined

@@ -304,9 +304,9 @@ func testPanic(server Server, t *testing.T) {
 }
 
 func testDelay(server Server, t *testing.T) {
-	now := time.Now().UTC()
-	eta := now.Add(100 * time.Millisecond)
-	task := newDelayTask(eta)
+	delay := 100 * time.Millisecond
+	eta := time.Now().UTC().Add(delay)
+	task := newDelayTask(delay)
 	asyncResult, err := server.SendTask(task)
 	if err != nil {
 		t.Error(err)
@@ -480,9 +480,9 @@ func newMultipleReturnTask(arg1, arg2 string, fail bool) *tasks.Signature {
 	}
 }
 
-func newDelayTask(eta time.Time) *tasks.Signature {
+func newDelayTask(delay time.Duration) *tasks.Signature {
 	return &tasks.Signature{
-		Name: "delay_test",
-		ETA:  &eta,
+		Name:  "delay_test",
+		Delay: delay,
 	}
 }

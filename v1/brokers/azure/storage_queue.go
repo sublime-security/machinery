@@ -119,19 +119,15 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 	messageBody := string(msg)
 	enqueueOptions := &azqueue.EnqueueMessageOptions{}
 
-	// Check the ETA signature field, if it is set and it is in the future,
+	// Check the delay signature field, if it is set and it is in the future,
 	// and is not a fifo queue, set a delay in seconds for the task.
-	if signature.ETA != nil {
-		now := time.Now().UTC()
-		delay := signature.ETA.Sub(now)
-		if delay > 0 {
-			if delay > maxDelay {
-				log.ERROR.Printf("max visibility timeout exceeded sending %s. defaulting to max.", signature.Name)
-				delay = maxDelay
-			}
-			delaysS := int32(delay.Seconds())
-			enqueueOptions.VisibilityTimeout = &delaysS
+	if signature.Delay > 0 {
+		if signature.Delay > maxDelay {
+			log.ERROR.Printf("max visibility timeout exceeded sending %s. defaulting to max.", signature.Name)
+			signature.Delay = maxDelay
 		}
+		delaysS := int32(signature.Delay.Seconds())
+		enqueueOptions.VisibilityTimeout = &delaysS
 	}
 
 	ttlSeconds := int32(b.cfg.TTL.Seconds())
@@ -173,9 +169,7 @@ func (b *Broker) extend(by time.Duration, signature *tasks.Signature) error {
 func (b *Broker) RetryMessage(signature *tasks.Signature) {
 	b.AdjustRoutingKey(signature)
 
-	delay := signature.ETA.Sub(time.Now().UTC())
-
-	delayS := int32(delay.Seconds())
+	delayS := int32(signature.Delay.Seconds())
 
 	_, err := b.cfg.Client.NewQueueClient(signature.RoutingKey).UpdateMessage(
 		context.Background(),

@@ -155,18 +155,14 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 		MsgInput.MessageGroupId = aws.String(MsgGroupID)
 	}
 
-	// Check the ETA signature field, if it is set and it is in the future,
+	// Check the delay signature field, if it is set and it is in the future,
 	// and is not a fifo queue, set a delay in seconds for the task.
-	if signature.ETA != nil && !strings.HasSuffix(signature.RoutingKey, ".fifo") {
-		now := time.Now().UTC()
-		delay := signature.ETA.Sub(now)
-		if delay > 0 {
-			if delay > maxAWSSQSDelay {
-				log.ERROR.Printf("max AWS SQS delay exceeded sending %s. defaulting to max.", signature.Name)
-				delay = maxAWSSQSDelay
-			}
-			MsgInput.DelaySeconds = aws.Int64(int64(delay.Seconds()))
+	if signature.Delay > 0 && !strings.HasSuffix(signature.RoutingKey, ".fifo") {
+		if signature.Delay > maxAWSSQSDelay {
+			log.ERROR.Printf("max AWS SQS delay exceeded sending %s. defaulting to max.", signature.Name)
+			signature.Delay = maxAWSSQSDelay
 		}
+		MsgInput.DelaySeconds = aws.Int64(int64(signature.Delay.Seconds()))
 	}
 
 	result, err := b.service.SendMessageWithContext(ctx, MsgInput)
@@ -199,13 +195,12 @@ func (b *Broker) extend(by time.Duration, signature *tasks.Signature) error {
 func (b *Broker) RetryMessage(signature *tasks.Signature) {
 	b.AdjustRoutingKey(signature)
 
-	delay := signature.ETA.Sub(time.Now().UTC())
-	delay = restrictVisibilityTimeoutDelay(delay, signature.ReceivedAt)
+	signature.Delay = restrictVisibilityTimeoutDelay(signature.Delay, signature.ReceivedAt)
 
 	visibilityInput := &awssqs.ChangeMessageVisibilityInput{
 		QueueUrl:          aws.String(b.GetConfig().Broker + "/" + signature.RoutingKey),
 		ReceiptHandle:     &signature.SQSReceiptHandle,
-		VisibilityTimeout: aws.Int64(int64(delay.Seconds())),
+		VisibilityTimeout: aws.Int64(int64(signature.Delay.Seconds())),
 	}
 
 	_, err := b.service.ChangeMessageVisibility(visibilityInput)

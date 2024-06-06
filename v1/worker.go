@@ -210,16 +210,6 @@ func (worker *Worker) Process(signature *tasks.Signature, extendFunc tasks.Exten
 	// Call the task
 	results, err := task.Call()
 	if err != nil {
-		// If a tasks.ErrRetryTaskLater was returned from the task,
-		// retry the task after specified duration
-		retryTaskLaterErr, ok := interface{}(err).(tasks.ErrRetryTaskLater)
-		if ok {
-			if worker.taskRetryErrorHandler != nil {
-				worker.taskRetryErrorHandler(err, signature)
-			}
-			return worker.retryTaskIn(signature, retryTaskLaterErr.RetryIn())
-		}
-
 		keepAndRetryErr, ok := interface{}(err).(tasks.ErrKeepAndRetryTaskLater)
 		if ok {
 			if worker.taskRetryErrorHandler != nil {
@@ -266,8 +256,7 @@ func (worker *Worker) taskRetry(signature *tasks.Signature) error {
 	signature.RetryTimeout = retry.FibonacciNext(signature.RetryTimeout)
 
 	// Delay task by signature.RetryTimeout seconds
-	eta := time.Now().UTC().Add(time.Second * time.Duration(signature.RetryTimeout))
-	signature.ETA = &eta
+	signature.Delay = time.Second * time.Duration(signature.RetryTimeout)
 
 	log.INFO.Printf("Task %s failed. Going to retry in %d seconds.", signature.UUID, signature.RetryTimeout)
 
@@ -276,7 +265,7 @@ func (worker *Worker) taskRetry(signature *tasks.Signature) error {
 	return err
 }
 
-// taskRetryIn republishes the task to the queue with ETA of now + retryIn.Seconds()
+// taskRetryIn republishes the task to the queue retryIn
 func (worker *Worker) retryTaskIn(signature *tasks.Signature, retryIn time.Duration) error {
 	// Update task state to RETRY
 	if err := worker.server.GetBackend().SetStateRetry(signature); err != nil {
@@ -284,8 +273,7 @@ func (worker *Worker) retryTaskIn(signature *tasks.Signature, retryIn time.Durat
 	}
 
 	// Delay task by retryIn duration
-	eta := time.Now().UTC().Add(retryIn)
-	signature.ETA = &eta
+	signature.Delay = retryIn
 
 	// Increase the attempt count, but leave RetryCount alone because it's for the default retry behavior.
 	signature.AttemptCount++
@@ -297,7 +285,7 @@ func (worker *Worker) retryTaskIn(signature *tasks.Signature, retryIn time.Durat
 	return err
 }
 
-// keepAndRetryTaskIn attempts to keep the message on the queue but with a new ETA of now + retryIn.Seconds()
+// keepAndRetryTaskIn attempts to keep the message on the queue but with a delay of retryIn
 func (worker *Worker) keepAndRetryTaskIn(signature *tasks.Signature, retryIn time.Duration) error {
 	// Update task state to RETRY
 	if err := worker.server.GetBackend().SetStateRetry(signature); err != nil {
@@ -305,8 +293,7 @@ func (worker *Worker) keepAndRetryTaskIn(signature *tasks.Signature, retryIn tim
 	}
 
 	// Delay task by retryIn duration
-	eta := time.Now().UTC().Add(retryIn)
-	signature.ETA = &eta
+	signature.Delay = retryIn
 
 	// Increase the attempt count, but leave RetryCount alone because it's for the default retry behavior. This will
 	// only matter if the broker does not support RetryMessage and falls back to sending a new task.
