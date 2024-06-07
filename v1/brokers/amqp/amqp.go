@@ -191,16 +191,10 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 		return fmt.Errorf("JSON marshal error: %s", err)
 	}
 
-	// Check the ETA signature field, if it is set and it is in the future,
+	// Check the delay signature field, if it is set and it is in the future,
 	// delay the task
-	if signature.ETA != nil {
-		now := time.Now().UTC()
-
-		if signature.ETA.After(now) {
-			delayMs := int64(signature.ETA.Sub(now) / time.Millisecond)
-
-			return b.delay(signature, delayMs)
-		}
+	if signature.Delay > 0 {
+		return b.delay(signature, signature.Delay.Milliseconds())
 	}
 
 	queue := b.GetConfig().DefaultQueue

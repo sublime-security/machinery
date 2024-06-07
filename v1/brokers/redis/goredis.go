@@ -179,16 +179,12 @@ func (b *BrokerGR) Publish(ctx context.Context, signature *tasks.Signature) erro
 		return fmt.Errorf("JSON marshal error: %s", err)
 	}
 
-	// Check the ETA signature field, if it is set and it is in the future,
+	// Check the delay signature field, if it is set and it is in the future,
 	// delay the task
-	if signature.ETA != nil {
-		now := time.Now().UTC()
-
-		if signature.ETA.After(now) {
-			score := signature.ETA.UnixNano()
-			err = b.rclient.ZAdd(context.Background(), b.redisDelayedTasksKey, redis.Z{Score: float64(score), Member: msg}).Err()
-			return err
-		}
+	if signature.Delay > 0 {
+		score := time.Now().Add(signature.Delay).UnixNano()
+		err = b.rclient.ZAdd(context.Background(), b.redisDelayedTasksKey, redis.Z{Score: float64(score), Member: msg}).Err()
+		return err
 	}
 
 	err = b.rclient.RPush(context.Background(), signature.RoutingKey, msg).Err()

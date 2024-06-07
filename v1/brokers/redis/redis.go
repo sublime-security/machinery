@@ -192,16 +192,12 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 	conn := b.open()
 	defer conn.Close()
 
-	// Check the ETA signature field, if it is set and it is in the future,
+	// Check the delay signature field, if it is set and it is in the future,
 	// delay the task
-	if signature.ETA != nil {
-		now := time.Now().UTC()
-
-		if signature.ETA.After(now) {
-			score := signature.ETA.UnixNano()
-			_, err = conn.Do("ZADD", b.redisDelayedTasksKey, score, msg)
-			return err
-		}
+	if signature.Delay > 0 {
+		score := time.Now().Add(signature.Delay).UnixNano()
+		_, err = conn.Do("ZADD", b.redisDelayedTasksKey, score, msg)
+		return err
 	}
 
 	_, err = conn.Do("RPUSH", signature.RoutingKey, msg)

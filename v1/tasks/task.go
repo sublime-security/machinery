@@ -124,9 +124,9 @@ func New(taskFunc interface{}, args []Arg) (*Task, error) {
 // Call attempts to call the task with the supplied arguments.
 //
 // `err` is set in the return value in two cases:
-// 1. The reflected function invocation panics (e.g. due to a mismatched
-//    argument list).
-// 2. The task func itself returns a non-nil error.
+//  1. The reflected function invocation panics (e.g. due to a mismatched
+//     argument list).
+//  2. The task func itself returns a non-nil error.
 func (t *Task) Call() (taskResults []*TaskResult, err error) {
 	// retrieve the span from the task's context and finish it as soon as this function returns
 	span := opentracing.SpanFromContext(t.Context)
@@ -202,16 +202,16 @@ func (t *Task) Call() (taskResults []*TaskResult, err error) {
 			return nil, ErrLastReturnValueMustBeError
 		}
 
-		_, isRetriable := asError.(Retriable)
+		_, isRetryable := asError.(Retryable)
 
 		if span != nil {
-			if !isRetriable {
+			if !isRetryable {
 				span.LogFields(opentracing_log.Error(asError))
 			} else {
 				span.SetTag("warning", asError)
 			}
 
-			span.SetTag("can_retry", isRetriable)
+			span.SetTag("can_retry", isRetryable)
 			span.SetTag("did_fail", true)
 		}
 

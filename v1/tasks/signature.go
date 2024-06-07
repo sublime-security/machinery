@@ -48,7 +48,7 @@ type Signature struct {
 	UUID           string
 	Name           string
 	RoutingKey     string
-	ETA            *time.Time
+	Delay          time.Duration
 	IngestionTime  *time.Time
 	FirstReceived  *time.Time
 	ReceivedAt     time.Time
