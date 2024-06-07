@@ -3,6 +3,7 @@ package tasks_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -17,9 +18,9 @@ func TestTaskCallErrorTest(t *testing.T) {
 	t.Parallel()
 
 	// Create test task that returns tasks.ErrRetryTaskLater error
-	retriable := func() error { return tasks.NewErrRetryTaskLater("some error", 4*time.Hour) }
+	retryable := func() error { return tasks.NewErrKeepAndRetryTaskLater(fmt.Errorf("some error"), "", 4*time.Hour) }
 
-	task, err := tasks.New(retriable, []tasks.Arg{})
+	task, err := tasks.New(retryable, []tasks.Arg{})
 	_, task.Context = opentracing.StartSpanFromContext(context.Background(), "test")
 	assert.NoError(t, err)
 
@@ -27,7 +28,7 @@ func TestTaskCallErrorTest(t *testing.T) {
 	results, err := task.Call()
 	assert.Nil(t, results)
 	assert.NotNil(t, err)
-	_, ok := interface{}(err).(tasks.ErrRetryTaskLater)
+	_, ok := interface{}(err).(tasks.ErrKeepAndRetryTaskLater)
 	assert.True(t, ok, "Error should be castable to tasks.ErrRetryTaskLater")
 
 	// Create test task that returns a standard error
