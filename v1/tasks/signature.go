@@ -67,8 +67,8 @@ type Signature struct {
 	ChordCallback  *Signature
 	//MessageGroupId for Broker, e.g. SQS
 	BrokerMessageGroupId string
-	//ReceiptHandle of SQS Message
-	SQSReceiptHandle string
+	SQSReceiptHandle     string
+	SQSMessageID         string
 
 	AzureMessageID      string
 	AzurePopReceipt     string

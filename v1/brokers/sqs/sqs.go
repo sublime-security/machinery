@@ -272,6 +272,10 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 		sig.SQSReceiptHandle = *delivery.Messages[0].ReceiptHandle
 	}
 
+	if delivery.Messages[0].MessageId != nil {
+		sig.SQSMessageID = *delivery.Messages[0].MessageId
+	}
+
 	if receiveCount := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameApproximateReceiveCount]; receiveCount != nil {
 		if rc, err := strconv.ParseInt(*receiveCount, 10, 64); err == nil {
 			sig.AttemptCount = int(rc) - 1 // SQS receive count includes this attempt, but AttemptCount goes from 0
