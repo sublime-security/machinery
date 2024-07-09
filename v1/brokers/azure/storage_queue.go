@@ -71,13 +71,15 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 				output, err := b.receiveMessage()
 				if err == nil && len(output.Messages) > 0 {
 					deliveries <- output
-
 				} else {
 					if err != nil {
 						log.ERROR.Printf("Queue consume error on %s: %s", b.queueName, err)
 						if badRequestErrRegex.MatchString(err.Error()) {
 							time.Sleep(30 * time.Second)
 						}
+					} else {
+						// No messages, prevent fast looping
+						time.Sleep(100 * time.Millisecond)
 					}
 					//return back to pool right away
 					concurrency.Return()
