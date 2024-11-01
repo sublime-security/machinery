@@ -57,8 +57,10 @@ var (
 func (worker *Worker) Launch() error {
 	errorsChan := make(chan error)
 
+	log.INFO.Printf("Launching worker")
 	worker.LaunchAsync(errorsChan)
 
+	log.INFO.Printf("Launched worker")
 	return <-errorsChan
 }
 
@@ -101,20 +103,25 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 				concurrency, cancel = common.NewResizablePool(worker.Concurrency)
 			}
 
+			log.WARNING.Printf("Broker will start consuming")
 			retry, err := broker.StartConsuming(worker.ConsumerTag, concurrency, worker)
+			log.WARNING.Printf("Broker finished consuming")
 
 			if cancel != nil {
 				cancel()
 			}
 			if retry {
+				log.WARNING.Printf("Worker failed, but doing to retry")
 				if worker.errorHandler != nil {
 					worker.errorHandler(err)
 				} else {
 					log.WARNING.Printf("Broker failed with error: %s", err)
 				}
 			} else {
+				log.WARNING.Printf("Going to stop the broker, I guess?")
 				signalWG.Wait()
 				errorsChan <- err // stop the goroutine
+				log.WARNING.Printf("Broker shutdown wrote to errorsChan: %#v", err)
 				return
 			}
 

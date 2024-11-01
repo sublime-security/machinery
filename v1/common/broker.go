@@ -105,6 +105,7 @@ func (b *Broker) StartConsuming(consumerTag string, taskProcessor iface.TaskProc
 
 // StopConsuming is a common part of StopConsuming
 func (b *Broker) StopConsuming() {
+	log.WARNING.Print("Broker StopConsuming()")
 	// Do not retry from now on
 	b.retry = false
 	// Stop the retry closure earlier

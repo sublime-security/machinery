@@ -66,48 +66,59 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 	//save it so that it can be used later when attempting to delete task
 	b.queueUrl = qURL
 
-	deliveries := make(chan *awssqs.ReceiveMessageOutput)
-
 	b.stopReceivingChan = make(chan int)
 	b.receivingWG.Add(1)
 
-	go func() {
-		defer b.receivingWG.Done()
+	defer b.receivingWG.Done()
 
-		log.INFO.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", *qURL)
+	log.INFO.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", *qURL)
 
-		pool := concurrency.Pool()
+	pool := concurrency.Pool()
+	log.INFO.Printf("concurrency=%#v pool=%#v", concurrency, pool)
 
-		for {
-			select {
-			// A way to stop this goroutine from b.StopConsuming
-			case <-b.stopReceivingChan:
-				close(deliveries)
+	errorsChan := make(chan error)
+	defer close(errorsChan)
 
-				return
-			case <-pool:
-				output, err := b.receiveMessage(qURL)
-				if err == nil && len(output.Messages) > 0 {
-					deliveries <- output
-
-				} else {
-					if err != nil {
-						log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
-
-						// Avoid repeating this
-						if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
-							time.Sleep(30 * time.Second)
-						}
-					}
-					//return back to pool right away
+	for {
+		log.INFO.Printf("StartConsuming is in select loop")
+		select {
+		case workerError := <-errorsChan:
+			log.INFO.Printf("Oh no, an error :(")
+			return b.GetRetry(), workerError
+		// A way to stop this goroutine from b.StopConsuming
+		case <-b.stopReceivingChan:
+			// If someone called b.stopReceivingChannel, they are trying to shut down the process
+			// so we don't want to retry the StartConsuming call
+			return false, nil
+		case <-pool:
+			log.INFO.Printf("StartConsuming pulled from pool=%#v, calling receiveMessage", pool)
+			output, err := b.receiveMessage(qURL)
+			log.INFO.Printf("StartConsuming got a receiveMessage")
+			if err == nil && len(output.Messages) > 0 {
+				b.processingWG.Add(1)
+				go func() {
+					consumeError := b.consumeOne(output, taskProcessor)
 					concurrency.Return()
+					b.processingWG.Done()
+					if consumeError != nil {
+						errorsChan <- consumeError
+					}
+				}()
+			} else {
+				if err != nil {
+					log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
+
+					// Avoid repeating this
+					if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
+						time.Sleep(30 * time.Second)
+					}
 				}
+				//return back to pool right away
+				log.INFO.Println("Returning to concurrency=%#v", concurrency)
+				concurrency.Return()
+				log.INFO.Println("Returned to concurrency=%#v", concurrency)
 			}
 		}
-	}()
-
-	if err := b.consume(deliveries, taskProcessor, concurrency); err != nil {
-		return b.GetRetry(), err
 	}
 
 	return b.GetRetry(), nil
@@ -233,11 +244,12 @@ func restrictVisibilityTimeoutDelay(delay time.Duration, receivedAt time.Time) t
 
 // consume is a method which keeps consuming deliveries from a channel, until there is an error or a stop signal
 func (b *Broker) consume(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool) error {
-
+	log.INFO.Printf("consume(%#v)", deliveries)
 	errorsChan := make(chan error)
 
 	for {
 		whetherContinue, err := b.consumeDeliveries(deliveries, taskProcessor, concurrency, errorsChan)
+		log.INFO.Printf("consume(%#v) whetherContinue=%t err=%#v", deliveries, whetherContinue, err)
 		if err != nil {
 			return err
 		}
@@ -375,7 +387,9 @@ func (b *Broker) receiveMessage(qURL *string) (*awssqs.ReceiveMessageOutput, err
 	if visibilityTimeout != nil {
 		input.VisibilityTimeout = aws.Int64(int64(*visibilityTimeout))
 	}
+	log.INFO.Printf("SQS Receive on %s", *qURL)
 	result, err := b.service.ReceiveMessage(input)
+	log.INFO.Printf("SQS Receive result on %s: %d %v", *qURL, len(result.Messages), err)
 	if err != nil {
 		return nil, err
 	}
@@ -391,47 +405,66 @@ func (b *Broker) initializePool(pool chan struct{}, concurrency int) {
 
 // consumeDeliveries is a method consuming deliveries from deliveries channel
 func (b *Broker) consumeDeliveries(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool, errorsChan chan error) (bool, error) {
+	log.INFO.Printf("consumeDeliveries(%#v)", deliveries)
 	select {
 	case err := <-errorsChan:
+		log.INFO.Println("consumeDeliveries returning false, err=%#v", err)
 		return false, err
 	case d := <-deliveries:
-
+		log.INFO.Printf("consumeDeliveries got a deliveries")
 		b.processingWG.Add(1)
+		log.INFO.Printf("consumeDeliveries added to p.processingWG")
 
 		// Consume the task inside a goroutine so multiple tasks
 		// can be processed concurrently
 		go func() {
+			log.INFO.Printf("consumeDeliveries inner goroutine started")
 
-			if err := b.consumeOne(d, taskProcessor); err != nil {
-				errorsChan <- err
-			}
+			err := b.consumeOne(d, taskProcessor)
+
+			// give worker back to pool
+			log.INFO.Printf("Calling concurrency(%#v).Return()", concurrency)
+			concurrency.Return()
+			log.INFO.Printf("consumeDeliveries inner goroutine finished")
 
 			b.processingWG.Done()
 
-			// give worker back to pool
-			concurrency.Return()
+			if err != nil {
+				log.INFO.Printf("Before sending %#v to %#v", err, errorsChan)
+				errorsChan <- err
+				log.INFO.Printf("After sending %#v to %#v", err, errorsChan)
+			}
 		}()
 	case <-b.GetStopChan():
+		log.INFO.Printf("consumeDeliveries returning false, nil")
 		return false, nil
 	}
+	log.INFO.Printf("consumeDeliveries returning true, nil")
 	return true, nil
 }
 
 // continueReceivingMessages is a method returns a continue signal
 func (b *Broker) continueReceivingMessages(qURL *string, deliveries chan *awssqs.ReceiveMessageOutput) (bool, error) {
+	log.INFO.Printf("continueReceivingMessages(qURL=%s, deliveries=%#v)", *qURL, deliveries)
 	select {
 	// A way to stop this goroutine from b.StopConsuming
 	case <-b.stopReceivingChan:
 		return false, nil
 	default:
 		output, err := b.receiveMessage(qURL)
+		log.INFO.Printf("continueReceivingMessages received messages len %d", len(output.Messages))
 		if err != nil {
 			return true, err
 		}
 		if len(output.Messages) == 0 {
 			return true, nil
 		}
-		go func() { deliveries <- output }()
+		log.INFO.Printf("continueReceivingMessages spawning goroutine to put output on deliveries %#v", deliveries)
+		go func() {
+			log.INFO.Printf("continueReceivingMessages goroutine putting output on deliveries %#v", deliveries)
+			deliveries <- output
+			log.INFO.Printf("continueReceivingMessages goroutine put output on deliveries %#v", deliveries)
+		}()
 	}
 	return true, nil
 }
