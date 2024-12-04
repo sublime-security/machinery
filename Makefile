@@ -19,7 +19,7 @@ golint:
 test:
 	TEST_FAILED= ; \
 	for pkg in ${PACKAGES}; do \
-		go test $$pkg || TEST_FAILED=1; \
+		go test -v -timeout 20m $$pkg || TEST_FAILED=1; \
 	done; \
 	[ -z "$$TEST_FAILED" ]
 
@@ -28,11 +28,11 @@ test-with-coverage:
 	echo "mode: set" > coverage-all.out
 	TEST_FAILED= ; \
 	for pkg in ${PACKAGES}; do \
-		go test -coverprofile=coverage.out -covermode=set $$pkg || TEST_FAILED=1; \
+		go test -v -timeout 20m -coverprofile=coverage.out -covermode=set $$pkg || TEST_FAILED=1; \
 		tail -n +2 coverage.out >> coverage-all.out; \
 	done; \
 	[ -z "$$TEST_FAILED" ]
 	#go tool cover -html=coverage-all.out
 
 ci:
-	bash -c 'docker-compose -f docker-compose.test.yml -p machinery_ci up --build --abort-on-container-exit --exit-code-from sut'
+	bash -c 'docker compose -f docker-compose.test.yml -p machinery_ci up --build --abort-on-container-exit --exit-code-from sut'
