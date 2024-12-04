@@ -19,7 +19,7 @@ golint:
 test:
 	TEST_FAILED= ; \
 	for pkg in ${PACKAGES}; do \
-		go test -v -timeout 20m $$pkg || TEST_FAILED=1; \
+		go test -v -timeout 20m -buildvcs=false $$pkg || TEST_FAILED=1; \
 	done; \
 	[ -z "$$TEST_FAILED" ]
 
@@ -28,7 +28,7 @@ test-with-coverage:
 	echo "mode: set" > coverage-all.out
 	TEST_FAILED= ; \
 	for pkg in ${PACKAGES}; do \
-		go test -v -timeout 20m -coverprofile=coverage.out -covermode=set $$pkg || TEST_FAILED=1; \
+		go test -v -timeout 20m -buildvcs=false -coverprofile=coverage.out -covermode=set $$pkg || TEST_FAILED=1; \
 		tail -n +2 coverage.out >> coverage-all.out; \
 	done; \
 	[ -z "$$TEST_FAILED" ]

@@ -16,6 +16,7 @@ ADD . /go/src/github.com/RichardKnop/machinery
 
 # Set GO111MODULE=on variable to activate module support
 ENV GO111MODULE on
+ENV GOFLAGS -buildvcs=false
 
 # Run integration tests as default command
 CMD /go/src/github.com/RichardKnop/machinery/wait-for-it.sh rabbitmq:5672 -- make test-with-coverage
