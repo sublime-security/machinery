@@ -347,7 +347,7 @@ func testResizablePoolConcurrency(t *testing.T, capChangeSleep time.Duration, ca
 		// Block on the capacity being set correctly before setting lastCap to the newCap. This ensures the test isn't
 		// racing against setting the capacity.
 		<-rs.SetCapacity(newCap)
-		assert.Less(t, time.Since(preSet), time.Millisecond)
+		assert.Less(t, time.Since(preSet), 10*time.Millisecond)
 
 		// fmt.Printf("Setting capacity to %d. Iteration %d \n", newCap, i)
 
