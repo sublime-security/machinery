@@ -1,4 +1,4 @@
-.PHONY: fmt lint golint test test-with-coverage ci
+.PHONY: fmt lint golint test ci
 # TODO: When Go 1.9 is released vendor folder should be ignored automatically
 PACKAGES=`go list ./... | grep -v vendor | grep -v mocks`
 
@@ -17,22 +17,14 @@ golint:
 	[ -z "$$GOLINT_FAILED" ]
 
 test:
+	go version
 	TEST_FAILED= ; \
 	for pkg in ${PACKAGES}; do \
+	  	echo "$$pkg"; \
 		go test -v -timeout 20m -buildvcs=false $$pkg || TEST_FAILED=1; \
+		echo "TEST_FAILED=$$TEST_FAILED"; \
 	done; \
 	[ -z "$$TEST_FAILED" ]
-
-test-with-coverage:
-	echo "" > coverage.out
-	echo "mode: set" > coverage-all.out
-	TEST_FAILED= ; \
-	for pkg in ${PACKAGES}; do \
-		go test -v -timeout 20m -buildvcs=false -coverprofile=coverage.out -covermode=set $$pkg || TEST_FAILED=1; \
-		tail -n +2 coverage.out >> coverage-all.out; \
-	done; \
-	[ -z "$$TEST_FAILED" ]
-	#go tool cover -html=coverage-all.out
 
 ci:
 	bash -c 'docker compose -f docker-compose.test.yml -p machinery_ci up --build --abort-on-container-exit --exit-code-from sut'
