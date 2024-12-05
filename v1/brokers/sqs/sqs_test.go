@@ -102,7 +102,7 @@ func TestPrivateFunc_consume(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	concurrency := common.NewResizablePool(1)
+	concurrency, _ := common.NewResizablePool(1)
 	wk := server1.NewWorker("sms_worker", 0)
 	deliveries := make(chan *awssqs.ReceiveMessageOutput)
 	outputCopy := *receiveMessageOutput
@@ -204,7 +204,7 @@ func TestPrivateFunc_receiveMessage(t *testing.T) {
 
 func TestPrivateFunc_consumeDeliveries(t *testing.T) {
 
-	concurrency := common.NewResizablePool(0)
+	concurrency, _ := common.NewResizablePool(0)
 	errorsChan := make(chan error)
 	deliveries := make(chan *awssqs.ReceiveMessageOutput)
 	server1, err := machinery.NewServer(cnf)
@@ -319,7 +319,7 @@ func TestPrivateFunc_consumeWithConcurrency(t *testing.T) {
 	broker.SetRegisteredTaskNames([]string{"test-task"})
 	assert.NoError(t, err)
 
-	concurrency := common.NewResizablePool(1)
+	concurrency, _ := common.NewResizablePool(1)
 	wk := server1.NewWorker("sms_worker", 1)
 	deliveries := make(chan *awssqs.ReceiveMessageOutput)
 	outputCopy := *receiveMessageOutput
