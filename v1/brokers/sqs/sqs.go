@@ -66,48 +66,57 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 	//save it so that it can be used later when attempting to delete task
 	b.queueUrl = qURL
 
-	deliveries := make(chan *awssqs.ReceiveMessageOutput)
-
 	b.stopReceivingChan = make(chan int)
 	b.receivingWG.Add(1)
 
-	go func() {
-		defer b.receivingWG.Done()
+	defer b.receivingWG.Done()
 
-		log.INFO.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", *qURL)
+	log.INFO.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", *qURL)
 
-		pool := concurrency.Pool()
+	pool := concurrency.Pool()
 
-		for {
-			select {
-			// A way to stop this goroutine from b.StopConsuming
-			case <-b.stopReceivingChan:
-				close(deliveries)
-
-				return
-			case <-pool:
-				output, err := b.receiveMessage(qURL)
-				if err == nil && len(output.Messages) > 0 {
-					deliveries <- output
-
-				} else {
-					if err != nil {
-						log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
-
-						// Avoid repeating this
-						if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
-							time.Sleep(30 * time.Second)
-						}
-					}
-					//return back to pool right away
-					concurrency.Return()
-				}
-			}
-		}
+	errorsChan := make(chan error)
+	defer func() {
+		// There could be an outstanding consumeOne call in a goroutine that will return an error that
+		// get put on the channel, so make sure there are no oustanding consumeOne calls before closing the channel
+		b.processingWG.Wait()
+		close(errorsChan)
 	}()
 
-	if err := b.consume(deliveries, taskProcessor, concurrency); err != nil {
-		return b.GetRetry(), err
+	for {
+		select {
+		case workerError := <-errorsChan:
+			return b.GetRetry(), workerError
+		// A way to stop this goroutine from b.StopConsuming
+		case <-b.stopReceivingChan:
+			// If someone called b.stopReceivingChannel, they are trying to shut down the process
+			// so we don't want to retry the StartConsuming call
+			return false, nil
+		case <-pool:
+			output, err := b.receiveMessage(qURL)
+			if err == nil && len(output.Messages) > 0 {
+				b.processingWG.Add(1)
+				go func() {
+					consumeError := b.consumeOne(output, taskProcessor)
+					if consumeError != nil {
+						errorsChan <- consumeError
+					}
+					concurrency.Return()
+					b.processingWG.Done()
+				}()
+			} else {
+				if err != nil {
+					log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
+
+					// Avoid repeating this
+					if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
+						time.Sleep(30 * time.Second)
+					}
+				}
+				//return back to pool right away
+				concurrency.Return()
+			}
+		}
 	}
 
 	return b.GetRetry(), nil
@@ -229,22 +238,6 @@ func restrictVisibilityTimeoutDelay(delay time.Duration, receivedAt time.Time) t
 	}
 
 	return delay
-}
-
-// consume is a method which keeps consuming deliveries from a channel, until there is an error or a stop signal
-func (b *Broker) consume(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool) error {
-
-	errorsChan := make(chan error)
-
-	for {
-		whetherContinue, err := b.consumeDeliveries(deliveries, taskProcessor, concurrency, errorsChan)
-		if err != nil {
-			return err
-		}
-		if whetherContinue == false {
-			return nil
-		}
-	}
 }
 
 // consumeOne is a method consumes a delivery. If a delivery was consumed successfully, it will be deleted from AWS SQS
@@ -389,34 +382,6 @@ func (b *Broker) initializePool(pool chan struct{}, concurrency int) {
 	}
 }
 
-// consumeDeliveries is a method consuming deliveries from deliveries channel
-func (b *Broker) consumeDeliveries(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool, errorsChan chan error) (bool, error) {
-	select {
-	case err := <-errorsChan:
-		return false, err
-	case d := <-deliveries:
-
-		b.processingWG.Add(1)
-
-		// Consume the task inside a goroutine so multiple tasks
-		// can be processed concurrently
-		go func() {
-
-			if err := b.consumeOne(d, taskProcessor); err != nil {
-				errorsChan <- err
-			}
-
-			b.processingWG.Done()
-
-			// give worker back to pool
-			concurrency.Return()
-		}()
-	case <-b.GetStopChan():
-		return false, nil
-	}
-	return true, nil
-}
-
 // continueReceivingMessages is a method returns a continue signal
 func (b *Broker) continueReceivingMessages(qURL *string, deliveries chan *awssqs.ReceiveMessageOutput) (bool, error) {
 	select {
@@ -431,7 +396,9 @@ func (b *Broker) continueReceivingMessages(qURL *string, deliveries chan *awssqs
 		if len(output.Messages) == 0 {
 			return true, nil
 		}
-		go func() { deliveries <- output }()
+		go func() {
+			deliveries <- output
+		}()
 	}
 	return true, nil
 }
