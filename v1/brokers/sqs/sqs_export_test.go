@@ -147,7 +147,8 @@ func NewTestErrorBroker() *Broker {
 }
 
 func (b *Broker) ConsumeForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool) error {
-	return b.consume(deliveries, taskProcessor, concurrency)
+	panic("not implemented")
+	return nil
 }
 
 func (b *Broker) ConsumeOneForTest(delivery *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor) error {
@@ -171,11 +172,13 @@ func (b *Broker) InitializePoolForTest(pool chan struct{}, concurrency int) {
 }
 
 func (b *Broker) ConsumeDeliveriesForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool, errorsChan chan error) (bool, error) {
-	return b.consumeDeliveries(deliveries, taskProcessor, concurrency, errorsChan)
+	panic("not implemented")
+	return false, nil
 }
 
 func (b *Broker) ContinueReceivingMessagesForTest(qURL *string, deliveries chan *awssqs.ReceiveMessageOutput) (bool, error) {
-	return b.continueReceivingMessages(qURL, deliveries)
+	panic("not implemented")
+	return false, nil
 }
 
 func (b *Broker) StopReceivingForTest() {
