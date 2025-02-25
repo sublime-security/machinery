@@ -174,6 +174,8 @@ func (b *BrokerGR) Publish(ctx context.Context, signature *tasks.Signature) erro
 	// Adjust routing key (this decides which queue the message will be published to)
 	b.Broker.AdjustRoutingKey(signature)
 
+	delay := signature.Delay
+	signature.Delay = 0
 	msg, err := json.Marshal(signature)
 	if err != nil {
 		return fmt.Errorf("JSON marshal error: %s", err)
@@ -181,8 +183,8 @@ func (b *BrokerGR) Publish(ctx context.Context, signature *tasks.Signature) erro
 
 	// Check the delay signature field, if it is set and it is in the future,
 	// delay the task
-	if signature.Delay > 0 {
-		score := time.Now().Add(signature.Delay).UnixNano()
+	if delay > 0 {
+		score := time.Now().Add(delay).UnixNano()
 		err = b.rclient.ZAdd(context.Background(), b.redisDelayedTasksKey, redis.Z{Score: float64(score), Member: msg}).Err()
 		return err
 	}
