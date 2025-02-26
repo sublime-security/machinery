@@ -184,6 +184,8 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 	// Adjust routing key (this decides which queue the message will be published to)
 	b.Broker.AdjustRoutingKey(signature)
 
+	// We'll capture the delay here and set it to zero in the signature because otherwise
+	// the task will be continously delayed.
 	delay := signature.Delay
 	signature.Delay = 0
 	msg, err := json.Marshal(signature)
@@ -194,8 +196,6 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 	conn := b.open()
 	defer conn.Close()
 
-	// Check the delay signature field, if it is set and it is in the future,
-	// delay the task
 	if delay > 0 {
 		score := time.Now().Add(delay).UnixNano()
 		_, err = conn.Do("ZADD", b.redisDelayedTasksKey, score, msg)
