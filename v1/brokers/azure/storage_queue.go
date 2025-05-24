@@ -224,6 +224,12 @@ func (b *Broker) consumeOne(delivery azqueue.DequeueMessagesResponse, taskProces
 	sig.ReceivedAt = time.Now()
 	sig.AzureMessageContent = *msg.MessageText
 
+	if sig.UUID == "" {
+		// No UUID means the "task" was injected outside of machinery and we can't track state since there's no ID
+		// to track against.
+		sig.NoBackend = true
+	}
+
 	if msg.PopReceipt != nil {
 		sig.AzurePopReceipt = *msg.PopReceipt
 	}

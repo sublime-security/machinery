@@ -261,6 +261,12 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 
 	sig.ReceivedAt = time.Now()
 
+	if sig.UUID == "" {
+		// No UUID means the "task" was injected outside of machinery and we can't track state since there's no ID
+		// to track against.
+		sig.NoBackend = true
+	}
+
 	if delivery.Messages[0].ReceiptHandle != nil {
 		sig.SQSReceiptHandle = *delivery.Messages[0].ReceiptHandle
 	}

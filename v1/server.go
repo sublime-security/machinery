@@ -229,6 +229,10 @@ func (server *Server) SendTaskWithContext(ctx context.Context, signature *tasks.
 		return nil, fmt.Errorf("Publish message error: %s", err)
 	}
 
+	if signature.NoBackend {
+		return nil, nil
+	}
+
 	return result.NewAsyncResult(signature, server.backend), nil
 }
 
