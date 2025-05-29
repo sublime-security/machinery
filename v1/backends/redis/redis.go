@@ -7,15 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-redsync/redsync/v4"
-	redsyncredis "github.com/go-redsync/redsync/v4/redis/redigo"
-	"github.com/gomodule/redigo/redis"
-
 	"github.com/RichardKnop/machinery/v1/backends/iface"
 	"github.com/RichardKnop/machinery/v1/common"
 	"github.com/RichardKnop/machinery/v1/config"
 	"github.com/RichardKnop/machinery/v1/log"
 	"github.com/RichardKnop/machinery/v1/tasks"
+	"github.com/go-redsync/redsync/v4"
+	redsyncredis "github.com/go-redsync/redsync/v4/redis/redigo"
+	"github.com/gomodule/redigo/redis"
 )
 
 // Backend represents a Redis result backend
@@ -158,6 +157,10 @@ func (b *Backend) mergeNewTaskState(conn redis.Conn, newState *tasks.TaskState) 
 
 // SetStatePending updates task state to PENDING
 func (b *Backend) SetStatePending(signature *tasks.Signature) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	conn := b.open()
 	defer conn.Close()
 
@@ -167,6 +170,10 @@ func (b *Backend) SetStatePending(signature *tasks.Signature) error {
 
 // SetStateReceived updates task state to RECEIVED
 func (b *Backend) SetStateReceived(signature *tasks.Signature) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	conn := b.open()
 	defer conn.Close()
 
@@ -177,6 +184,10 @@ func (b *Backend) SetStateReceived(signature *tasks.Signature) error {
 
 // SetStateStarted updates task state to STARTED
 func (b *Backend) SetStateStarted(signature *tasks.Signature) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	conn := b.open()
 	defer conn.Close()
 
@@ -187,6 +198,10 @@ func (b *Backend) SetStateStarted(signature *tasks.Signature) error {
 
 // SetStateRetry updates task state to RETRY
 func (b *Backend) SetStateRetry(signature *tasks.Signature) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	conn := b.open()
 	defer conn.Close()
 
@@ -197,6 +212,10 @@ func (b *Backend) SetStateRetry(signature *tasks.Signature) error {
 
 // SetStateSuccess updates task state to SUCCESS
 func (b *Backend) SetStateSuccess(signature *tasks.Signature, results []*tasks.TaskResult) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	conn := b.open()
 	defer conn.Close()
 
@@ -207,6 +226,10 @@ func (b *Backend) SetStateSuccess(signature *tasks.Signature, results []*tasks.T
 
 // SetStateFailure updates task state to FAILURE
 func (b *Backend) SetStateFailure(signature *tasks.Signature, err string) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	conn := b.open()
 	defer conn.Close()
 

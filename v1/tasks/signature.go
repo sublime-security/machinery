@@ -74,6 +74,9 @@ type Signature struct {
 	AzurePopReceipt     string
 	AzureMessageContent string
 
+	// NoBackend: skip all operations related to machineries backend concept. Just leverage the broker abstraction.
+	NoBackend bool
+
 	// StopTaskDeletionOnError used with sqs when we want to send failed messages to dlq,
 	// and don't want machinery to delete from source queue
 	StopTaskDeletionOnError bool
