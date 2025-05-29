@@ -226,6 +226,10 @@ func (b *Backend) SetStateSuccess(signature *tasks.Signature, results []*tasks.T
 
 // SetStateFailure updates task state to FAILURE
 func (b *Backend) SetStateFailure(signature *tasks.Signature, err string) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	conn := b.open()
 	defer conn.Close()
 
