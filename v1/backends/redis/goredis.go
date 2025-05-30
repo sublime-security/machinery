@@ -160,12 +160,20 @@ func (b *BackendGR) mergeNewTaskState(newState *tasks.TaskState) {
 
 // SetStatePending updates task state to PENDING
 func (b *BackendGR) SetStatePending(signature *tasks.Signature) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	taskState := tasks.NewPendingTaskState(signature)
 	return b.updateState(taskState)
 }
 
 // SetStateReceived updates task state to RECEIVED
 func (b *BackendGR) SetStateReceived(signature *tasks.Signature) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	taskState := tasks.NewReceivedTaskState(signature)
 	b.mergeNewTaskState(taskState)
 	return b.updateState(taskState)
@@ -173,6 +181,10 @@ func (b *BackendGR) SetStateReceived(signature *tasks.Signature) error {
 
 // SetStateStarted updates task state to STARTED
 func (b *BackendGR) SetStateStarted(signature *tasks.Signature) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	taskState := tasks.NewStartedTaskState(signature)
 	b.mergeNewTaskState(taskState)
 	return b.updateState(taskState)
@@ -180,6 +192,10 @@ func (b *BackendGR) SetStateStarted(signature *tasks.Signature) error {
 
 // SetStateRetry updates task state to RETRY
 func (b *BackendGR) SetStateRetry(signature *tasks.Signature) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	taskState := tasks.NewRetryTaskState(signature)
 	b.mergeNewTaskState(taskState)
 	return b.updateState(taskState)
@@ -187,6 +203,10 @@ func (b *BackendGR) SetStateRetry(signature *tasks.Signature) error {
 
 // SetStateSuccess updates task state to SUCCESS
 func (b *BackendGR) SetStateSuccess(signature *tasks.Signature, results []*tasks.TaskResult) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	taskState := tasks.NewSuccessTaskState(signature, results)
 	b.mergeNewTaskState(taskState)
 	return b.updateState(taskState)
@@ -194,6 +214,10 @@ func (b *BackendGR) SetStateSuccess(signature *tasks.Signature, results []*tasks
 
 // SetStateFailure updates task state to FAILURE
 func (b *BackendGR) SetStateFailure(signature *tasks.Signature, err string) error {
+	if signature.NoBackend {
+		return nil
+	}
+
 	taskState := tasks.NewFailureTaskState(signature, err)
 	b.mergeNewTaskState(taskState)
 	return b.updateState(taskState)
