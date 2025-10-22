@@ -94,7 +94,20 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 			return false, nil
 		case <-pool:
 			output, err := b.receiveMessage(qURL)
-			if err == nil && len(output.Messages) > 0 {
+			if err != nil {
+				log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
+
+				// Avoid repeating this
+				if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
+					time.Sleep(30 * time.Second)
+				}
+				//return back to pool right away
+				concurrency.Return()
+			} else if len(output.Messages) == 0 {
+				log.INFO.Printf("Received Messages returned empty on %s", *qURL)
+				//return back to pool right away
+				concurrency.Return()
+			} else {
 				b.processingWG.Add(1)
 				go func() {
 					consumeError := b.consumeOne(output, taskProcessor)
@@ -104,17 +117,6 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 					concurrency.Return()
 					b.processingWG.Done()
 				}()
-			} else {
-				if err != nil {
-					log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
-
-					// Avoid repeating this
-					if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
-						time.Sleep(30 * time.Second)
-					}
-				}
-				//return back to pool right away
-				concurrency.Return()
 			}
 		}
 	}
