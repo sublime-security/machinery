@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +27,7 @@ import (
 const (
 	maxAWSSQSDelay             = time.Minute * 15 // Max supported SQS delay is 15 min: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_SendMessage.html
 	maxAWSSQSVisibilityTimeout = time.Hour * 12   // Max supported SQS visibility timeout is 12 hours: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ChangeMessageVisibility.html
+	logSQSReceiveSampleRate    = 0.0001           // 0.01% of messages received from SQS will be logged
 )
 
 // Broker represents a AWS SQS broker
@@ -94,7 +96,20 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 			return false, nil
 		case <-pool:
 			output, err := b.receiveMessage(qURL)
-			if err == nil && len(output.Messages) > 0 {
+			if err != nil {
+				log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
+
+				// Avoid repeating this
+				if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
+					time.Sleep(30 * time.Second)
+				}
+				//return back to pool right away
+				concurrency.Return()
+			} else if len(output.Messages) == 0 {
+				log.INFO.Printf("Received Messages returned empty on %s", *qURL)
+				//return back to pool right away
+				concurrency.Return()
+			} else {
 				b.processingWG.Add(1)
 				go func() {
 					consumeError := b.consumeOne(output, taskProcessor)
@@ -104,17 +119,6 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 					concurrency.Return()
 					b.processingWG.Done()
 				}()
-			} else {
-				if err != nil {
-					log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
-
-					// Avoid repeating this
-					if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
-						time.Sleep(30 * time.Second)
-					}
-				}
-				//return back to pool right away
-				concurrency.Return()
 			}
 		}
 	}
@@ -375,7 +379,15 @@ func (b *Broker) receiveMessage(qURL *string) (*awssqs.ReceiveMessageOutput, err
 	if visibilityTimeout != nil {
 		input.VisibilityTimeout = aws.Int64(int64(*visibilityTimeout))
 	}
+	start := time.Now()
 	result, err := b.service.ReceiveMessage(input)
+	if rand.Float64() < logSQSReceiveSampleRate {
+		messageID := "unknown"
+		if err == nil && len(result.Messages) > 0 {
+			messageID = *result.Messages[0].MessageId
+		}
+		log.INFO.Printf("Sampled SQS ReceiveMessage (messageID: %s) for queue (%s) took %d (%.2f%% sample rate). Was error? %t", messageID, *qURL, time.Since(start).Milliseconds(), logSQSReceiveSampleRate*100, err != nil)
+	}
 	if err != nil {
 		return nil, err
 	}
