@@ -91,7 +91,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 	// we send it to the deliveries channel
 	go func() {
 
-		log.INFO.Print("[*] Waiting for messages. To exit press CTRL+C")
+		log.DEBUG.Print("[*] Waiting for messages. To exit press CTRL+C")
 
 		pool := concurrency.Pool()
 
@@ -315,7 +315,7 @@ func (b *Broker) consumeOne(delivery []byte, taskProcessor iface.TaskProcessor) 
 		if signature.IgnoreWhenTaskNotRegistered {
 			return nil
 		}
-		log.INFO.Printf("Task not registered with this worker. Requeuing message: %s", delivery)
+		log.DEBUG.Printf("Task not registered with this worker. Requeuing message: %s", delivery)
 		b.requeueMessage(delivery, taskProcessor)
 		return nil
 	}

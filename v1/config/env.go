@@ -13,7 +13,7 @@ func NewFromEnvironment() (*Config, error) {
 		return nil, err
 	}
 
-	log.INFO.Print("Successfully loaded config from the environment")
+	log.DEBUG.Print("Successfully loaded config from the environment")
 
 	return cnf, nil
 }

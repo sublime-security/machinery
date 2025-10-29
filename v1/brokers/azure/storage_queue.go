@@ -56,7 +56,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 	go func() {
 		defer b.receivingWG.Done()
 
-		log.INFO.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", b.queueName)
+		log.DEBUG.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", b.queueName)
 
 		pool := concurrency.Pool()
 
@@ -146,7 +146,7 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 		return err
 	}
 
-	log.INFO.Printf("Sending a message successfully, the messageId is %v", *result.Messages[0].MessageID)
+	log.DEBUG.Printf("Sending a message successfully, the messageId is %v", *result.Messages[0].MessageID)
 	return nil
 }
 

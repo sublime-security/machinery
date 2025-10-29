@@ -68,20 +68,20 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 	broker := worker.server.GetBroker()
 
 	// Log some useful information about worker configuration
-	log.INFO.Printf("Launching a worker with the following settings:")
-	log.INFO.Printf("- Broker: %s", RedactURL(cnf.Broker))
+	log.DEBUG.Printf("Launching a worker with the following settings:")
+	log.DEBUG.Printf("- Broker: %s", RedactURL(cnf.Broker))
 	if worker.Queue == "" {
-		log.INFO.Printf("- DefaultQueue: %s", cnf.DefaultQueue)
+		log.DEBUG.Printf("- DefaultQueue: %s", cnf.DefaultQueue)
 	} else {
-		log.INFO.Printf("- CustomQueue: %s", worker.Queue)
+		log.DEBUG.Printf("- CustomQueue: %s", worker.Queue)
 	}
-	log.INFO.Printf("- ResultBackend: %s", RedactURL(cnf.ResultBackend))
+	log.DEBUG.Printf("- ResultBackend: %s", RedactURL(cnf.ResultBackend))
 	if cnf.AMQP != nil {
-		log.INFO.Printf("- AMQP: %s", cnf.AMQP.Exchange)
-		log.INFO.Printf("  - Exchange: %s", cnf.AMQP.Exchange)
-		log.INFO.Printf("  - ExchangeType: %s", cnf.AMQP.ExchangeType)
-		log.INFO.Printf("  - BindingKey: %s", cnf.AMQP.BindingKey)
-		log.INFO.Printf("  - PrefetchCount: %d", cnf.AMQP.PrefetchCount)
+		log.DEBUG.Printf("- AMQP: %s", cnf.AMQP.Exchange)
+		log.DEBUG.Printf("  - Exchange: %s", cnf.AMQP.Exchange)
+		log.DEBUG.Printf("  - ExchangeType: %s", cnf.AMQP.ExchangeType)
+		log.DEBUG.Printf("  - BindingKey: %s", cnf.AMQP.BindingKey)
+		log.DEBUG.Printf("  - PrefetchCount: %d", cnf.AMQP.PrefetchCount)
 	}
 
 	var signalWG sync.WaitGroup
@@ -259,7 +259,7 @@ func (worker *Worker) taskRetry(signature *tasks.Signature) error {
 	// Delay task by signature.RetryTimeout seconds
 	signature.Delay = time.Second * time.Duration(signature.RetryTimeout)
 
-	log.INFO.Printf("Task %s failed. Going to retry in %d seconds.", signature.UUID, signature.RetryTimeout)
+	log.DEBUG.Printf("Task %s failed. Going to retry in %d seconds.", signature.UUID, signature.RetryTimeout)
 
 	// Send the task back to the queue
 	_, err := worker.server.SendTask(signature)
@@ -279,7 +279,7 @@ func (worker *Worker) retryTaskIn(signature *tasks.Signature, retryIn time.Durat
 	// Increase the attempt count, but leave RetryCount alone because it's for the default retry behavior.
 	signature.AttemptCount++
 
-	log.INFO.Printf("Task %s (%s) failed. Going to retry in %.0f seconds, attempt count %d.", signature.UUID, signature.Name, retryIn.Seconds(), signature.AttemptCount)
+	log.DEBUG.Printf("Task %s (%s) failed. Going to retry in %.0f seconds, attempt count %d.", signature.UUID, signature.Name, retryIn.Seconds(), signature.AttemptCount)
 
 	// Send the task back to the queue
 	_, err := worker.server.SendTask(signature)
@@ -300,7 +300,7 @@ func (worker *Worker) keepAndRetryTaskIn(signature *tasks.Signature, retryIn tim
 	// only matter if the broker does not support RetryMessage and falls back to sending a new task.
 	signature.AttemptCount++
 
-	log.INFO.Printf("Task %s (%s) failed. Going to retry in %.0f seconds, attempt count %d. Attempting to keep message.", signature.UUID, signature.Name, retryIn.Seconds(), signature.AttemptCount)
+	log.DEBUG.Printf("Task %s (%s) failed. Going to retry in %.0f seconds, attempt count %d. Attempting to keep message.", signature.UUID, signature.Name, retryIn.Seconds(), signature.AttemptCount)
 
 	return worker.server.RetryTaskAt(signature)
 }
