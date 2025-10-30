@@ -16,7 +16,7 @@ func NewFromYaml(cnfPath string, keepReloading bool) (*Config, error) {
 		return nil, err
 	}
 
-	log.INFO.Printf("Successfully loaded config from file %s", cnfPath)
+	log.DEBUG.Printf("Successfully loaded config from file %s", cnfPath)
 
 	if keepReloading {
 		// Open a goroutine to watch remote changes forever

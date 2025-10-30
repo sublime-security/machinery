@@ -24,7 +24,7 @@ func TestNew(t *testing.T) {
 func TestInitGroup(t *testing.T) {
 	groupUUID := "testGroupUUID"
 	taskUUIDs := []string{"testTaskUUID1", "testTaskUUID2", "testTaskUUID3"}
-	log.INFO.Println(dynamodb.TestDynamoDBBackend.GetConfig())
+	log.DEBUG.Println(dynamodb.TestDynamoDBBackend.GetConfig())
 
 	err := dynamodb.TestDynamoDBBackend.InitGroup(groupUUID, taskUUIDs)
 	assert.Nil(t, err)

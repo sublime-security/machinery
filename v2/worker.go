@@ -55,20 +55,20 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 	broker := worker.server.GetBroker()
 
 	// Log some useful information about worker configuration
-	log.INFO.Printf("Launching a worker with the following settings:")
-	log.INFO.Printf("- Broker: %s", RedactURL(cnf.Broker))
+	log.DEBUG.Printf("Launching a worker with the following settings:")
+	log.DEBUG.Printf("- Broker: %s", RedactURL(cnf.Broker))
 	if worker.Queue == "" {
-		log.INFO.Printf("- DefaultQueue: %s", cnf.DefaultQueue)
+		log.DEBUG.Printf("- DefaultQueue: %s", cnf.DefaultQueue)
 	} else {
-		log.INFO.Printf("- CustomQueue: %s", worker.Queue)
+		log.DEBUG.Printf("- CustomQueue: %s", worker.Queue)
 	}
-	log.INFO.Printf("- ResultBackend: %s", RedactURL(cnf.ResultBackend))
+	log.DEBUG.Printf("- ResultBackend: %s", RedactURL(cnf.ResultBackend))
 	if cnf.AMQP != nil {
-		log.INFO.Printf("- AMQP: %s", cnf.AMQP.Exchange)
-		log.INFO.Printf("  - Exchange: %s", cnf.AMQP.Exchange)
-		log.INFO.Printf("  - ExchangeType: %s", cnf.AMQP.ExchangeType)
-		log.INFO.Printf("  - BindingKey: %s", cnf.AMQP.BindingKey)
-		log.INFO.Printf("  - PrefetchCount: %d", cnf.AMQP.PrefetchCount)
+		log.DEBUG.Printf("- AMQP: %s", cnf.AMQP.Exchange)
+		log.DEBUG.Printf("  - Exchange: %s", cnf.AMQP.Exchange)
+		log.DEBUG.Printf("  - ExchangeType: %s", cnf.AMQP.ExchangeType)
+		log.DEBUG.Printf("  - BindingKey: %s", cnf.AMQP.BindingKey)
+		log.DEBUG.Printf("  - PrefetchCount: %d", cnf.AMQP.PrefetchCount)
 	}
 
 	var signalWG sync.WaitGroup

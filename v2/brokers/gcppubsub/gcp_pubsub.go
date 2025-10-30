@@ -92,7 +92,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency int, taskProcess
 	}
 
 	sub.ReceiveSettings.NumGoroutines = concurrency
-	log.INFO.Print("[*] Waiting for messages. To exit press CTRL+C")
+	log.DEBUG.Print("[*] Waiting for messages. To exit press CTRL+C")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -159,7 +159,7 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 		return err
 	}
 
-	log.INFO.Printf("Sending a message successfully, server-generated message ID %v", id)
+	log.DEBUG.Printf("Sending a message successfully, server-generated message ID %v", id)
 	return nil
 }
 

@@ -125,11 +125,11 @@ func worker() error {
 	}
 
 	preTaskHandler := func(signature *tasks.Signature) {
-		log.INFO.Println("I am a start of task handler for:", signature.Name)
+		log.DEBUG.Println("I am a start of task handler for:", signature.Name)
 	}
 
 	postTaskHandler := func(signature *tasks.Signature) {
-		log.INFO.Println("I am an end of task handler for:", signature.Name)
+		log.DEBUG.Println("I am an end of task handler for:", signature.Name)
 	}
 
 	worker.SetPostTaskHandler(postTaskHandler)
@@ -277,13 +277,13 @@ func send() error {
 	span.SetBaggageItem("batch.id", batchID)
 	span.LogFields(opentracinglog.String("batch.id", batchID))
 
-	log.INFO.Println("Starting batch:", batchID)
+	log.DEBUG.Println("Starting batch:", batchID)
 	/*
 	 * First, let's try sending a single task
 	 */
 	initTasks()
 
-	log.INFO.Println("Single task:")
+	log.DEBUG.Println("Single task:")
 
 	asyncResult, err := server.SendTaskWithContext(ctx, &addTask0)
 	if err != nil {
@@ -294,7 +294,7 @@ func send() error {
 	if err != nil {
 		return fmt.Errorf("Getting task result failed with error: %s", err.Error())
 	}
-	log.INFO.Printf("1 + 1 = %v\n", tasks.HumanReadableResults(results))
+	log.DEBUG.Printf("1 + 1 = %v\n", tasks.HumanReadableResults(results))
 
 	/*
 	 * Try couple of tasks with a slice argument and slice return value
@@ -308,7 +308,7 @@ func send() error {
 	if err != nil {
 		return fmt.Errorf("Getting task result failed with error: %s", err.Error())
 	}
-	log.INFO.Printf("sum([1, 2]) = %v\n", tasks.HumanReadableResults(results))
+	log.DEBUG.Printf("sum([1, 2]) = %v\n", tasks.HumanReadableResults(results))
 
 	asyncResult, err = server.SendTaskWithContext(ctx, &sumFloatsTask)
 	if err != nil {
@@ -319,7 +319,7 @@ func send() error {
 	if err != nil {
 		return fmt.Errorf("Getting task result failed with error: %s", err.Error())
 	}
-	log.INFO.Printf("sum([1.5, 2.7]) = %v\n", tasks.HumanReadableResults(results))
+	log.DEBUG.Printf("sum([1.5, 2.7]) = %v\n", tasks.HumanReadableResults(results))
 
 	asyncResult, err = server.SendTaskWithContext(ctx, &concatTask)
 	if err != nil {
@@ -330,7 +330,7 @@ func send() error {
 	if err != nil {
 		return fmt.Errorf("Getting task result failed with error: %s", err.Error())
 	}
-	log.INFO.Printf("concat([\"foo\", \"bar\"]) = %v\n", tasks.HumanReadableResults(results))
+	log.DEBUG.Printf("concat([\"foo\", \"bar\"]) = %v\n", tasks.HumanReadableResults(results))
 
 	asyncResult, err = server.SendTaskWithContext(ctx, &splitTask)
 	if err != nil {
@@ -341,7 +341,7 @@ func send() error {
 	if err != nil {
 		return fmt.Errorf("Getting task result failed with error: %s", err.Error())
 	}
-	log.INFO.Printf("split([\"foo\"]) = %v\n", tasks.HumanReadableResults(results))
+	log.DEBUG.Printf("split([\"foo\"]) = %v\n", tasks.HumanReadableResults(results))
 
 	/*
 	 * Now let's explore ways of sending multiple tasks
@@ -349,7 +349,7 @@ func send() error {
 
 	// Now let's try a parallel execution
 	initTasks()
-	log.INFO.Println("Group of tasks (parallel execution):")
+	log.DEBUG.Println("Group of tasks (parallel execution):")
 
 	group, err := tasks.NewGroup(&addTask0, &addTask1, &addTask2)
 	if err != nil {
@@ -366,7 +366,7 @@ func send() error {
 		if err != nil {
 			return fmt.Errorf("Getting task result failed with error: %s", err.Error())
 		}
-		log.INFO.Printf(
+		log.DEBUG.Printf(
 			"%v + %v = %v\n",
 			asyncResult.Signature.Args[0].Value,
 			asyncResult.Signature.Args[1].Value,
@@ -376,7 +376,7 @@ func send() error {
 
 	// Now let's try a group with a chord
 	initTasks()
-	log.INFO.Println("Group of tasks with a callback (chord):")
+	log.DEBUG.Println("Group of tasks with a callback (chord):")
 
 	group, err = tasks.NewGroup(&addTask0, &addTask1, &addTask2)
 	if err != nil {
@@ -397,11 +397,11 @@ func send() error {
 	if err != nil {
 		return fmt.Errorf("Getting chord result failed with error: %s", err.Error())
 	}
-	log.INFO.Printf("(1 + 1) * (2 + 2) * (5 + 6) = %v\n", tasks.HumanReadableResults(results))
+	log.DEBUG.Printf("(1 + 1) * (2 + 2) * (5 + 6) = %v\n", tasks.HumanReadableResults(results))
 
 	// Now let's try chaining task results
 	initTasks()
-	log.INFO.Println("Chain of tasks:")
+	log.DEBUG.Println("Chain of tasks:")
 
 	chain, err := tasks.NewChain(&addTask0, &addTask1, &addTask2, &multiplyTask0)
 	if err != nil {
@@ -417,7 +417,7 @@ func send() error {
 	if err != nil {
 		return fmt.Errorf("Getting chain result failed with error: %s", err.Error())
 	}
-	log.INFO.Printf("(((1 + 1) + (2 + 2)) + (5 + 6)) * 4 = %v\n", tasks.HumanReadableResults(results))
+	log.DEBUG.Printf("(((1 + 1) + (2 + 2)) + (5 + 6)) * 4 = %v\n", tasks.HumanReadableResults(results))
 
 	// Let's try a task which throws panic to make sure stack trace is not lost
 	initTasks()
@@ -430,7 +430,7 @@ func send() error {
 	if err == nil {
 		return errors.New("Error should not be nil if task panicked")
 	}
-	log.INFO.Printf("Task panicked and returned error = %v\n", err.Error())
+	log.DEBUG.Printf("Task panicked and returned error = %v\n", err.Error())
 
 	// Let's try a long running task
 	initTasks()
@@ -443,7 +443,7 @@ func send() error {
 	if err != nil {
 		return fmt.Errorf("Getting long running task result failed with error: %s", err.Error())
 	}
-	log.INFO.Printf("Long running task returned = %v\n", tasks.HumanReadableResults(results))
+	log.DEBUG.Printf("Long running task returned = %v\n", tasks.HumanReadableResults(results))
 
 	return nil
 }

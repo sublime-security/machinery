@@ -93,7 +93,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 		return b.GetRetry(), fmt.Errorf("Queue consume error: %s", err)
 	}
 
-	log.INFO.Print("[*] Waiting for messages. To exit press CTRL+C")
+	log.DEBUG.Print("[*] Waiting for messages. To exit press CTRL+C")
 
 	if err := b.consume(deliveries, concurrency, taskProcessor, amqpCloseChan); err != nil {
 		return b.GetRetry(), err
@@ -149,7 +149,7 @@ func (b *Broker) GetOrOpenConnection(queueName string, queueBindingKey string, e
 		go func() {
 			select {
 			case err = <-conn.errorchan:
-				log.INFO.Printf("Error occurred on queue: %s. Reconnecting", queueName)
+				log.DEBUG.Printf("Error occurred on queue: %s. Reconnecting", queueName)
 				b.connectionsMutex.Lock()
 				delete(b.connections, queueName)
 				b.connectionsMutex.Unlock()
@@ -308,7 +308,7 @@ func (b *Broker) consumeOne(delivery amqp.Delivery, taskProcessor iface.TaskProc
 	// there might be different workers for processing specific tasks
 	if !b.IsTaskRegistered(signature.Name) {
 		requeue = true
-		log.INFO.Printf("Task not registered with this worker. Requeing message: %s", delivery.Body)
+		log.DEBUG.Printf("Task not registered with this worker. Requeing message: %s", delivery.Body)
 
 		if !signature.IgnoreWhenTaskNotRegistered {
 			delivery.Nack(multiple, requeue)

@@ -105,7 +105,7 @@ func (b *BrokerGR) StartConsuming(consumerTag string, concurrency int, taskProce
 	// we send it to the deliveries channel
 	go func() {
 
-		log.INFO.Print("[*] Waiting for messages. To exit press CTRL+C")
+		log.DEBUG.Print("[*] Waiting for messages. To exit press CTRL+C")
 
 		for {
 			select {
@@ -305,7 +305,7 @@ func (b *BrokerGR) consumeOne(delivery []byte, taskProcessor iface.TaskProcessor
 	// If the task is not registered, we requeue it,
 	// there might be different workers for processing specific tasks
 	if !b.IsTaskRegistered(signature.Name) {
-		log.INFO.Printf("Task not registered with this worker. Requeuing message: %s", delivery)
+		log.DEBUG.Printf("Task not registered with this worker. Requeuing message: %s", delivery)
 
 		b.rclient.RPush(context.Background(), getQueueGR(b.GetConfig(), taskProcessor), delivery)
 		return nil
