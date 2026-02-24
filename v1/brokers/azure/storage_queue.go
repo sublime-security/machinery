@@ -81,7 +81,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 						// No messages, prevent fast looping
 						time.Sleep(100 * time.Millisecond)
 					}
-					//return back to pool right away
+					// return back to pool right away
 					concurrency.Return()
 				}
 			}
@@ -162,7 +162,7 @@ func (b *Broker) extend(by time.Duration, signature *tasks.Signature) error {
 		signature.AzureMessageContent,
 		&azqueue.UpdateMessageOptions{VisibilityTimeout: &delayS})
 	if err != nil {
-		log.ERROR.Printf("ignoring error attempting to change visibility timeout. will re-attempt after default period. task %s (%s)", signature.UUID, signature.Name)
+		log.ERROR.Printf("ignoring error attempting to extend visibility timeout. will re-attempt after default period. task %s (%s): %s", signature.UUID, signature.Name, err)
 	}
 
 	return nil
@@ -180,13 +180,12 @@ func (b *Broker) RetryMessage(signature *tasks.Signature) {
 		signature.AzureMessageContent,
 		&azqueue.UpdateMessageOptions{VisibilityTimeout: &delayS})
 	if err != nil {
-		log.ERROR.Printf("ignoring error attempting to change visibility timeout. will re-attempt after default period. task %s (%s)", signature.UUID, signature.Name)
+		log.ERROR.Printf("ignoring error attempting to change visibility timeout. will re-attempt after default period. task %s (%s): %s", signature.UUID, signature.Name, err)
 	}
 }
 
 // consume is a method which keeps consuming deliveries from a channel, until there is an error or a stop signal
 func (b *Broker) consume(deliveries <-chan azqueue.DequeueMessagesResponse, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool) error {
-
 	errorsChan := make(chan error)
 
 	for {
@@ -271,7 +270,6 @@ func (b *Broker) consumeOne(delivery azqueue.DequeueMessagesResponse, taskProces
 // deleteOne is a method delete a delivery from AWS SQS
 func (b *Broker) deleteOne(message *azqueue.DequeuedMessage) error {
 	_, err := b.cfg.Client.NewQueueClient(b.queueName).DeleteMessage(context.Background(), *message.MessageID, *message.PopReceipt, nil)
-
 	if err != nil {
 		return err
 	}
@@ -308,7 +306,6 @@ func (b *Broker) consumeDeliveries(deliveries <-chan azqueue.DequeueMessagesResp
 		// Consume the task inside a goroutine so multiple tasks
 		// can be processed concurrently
 		go func() {
-
 			if err := b.consumeOne(d, taskProcessor); err != nil {
 				errorsChan <- err
 			}
