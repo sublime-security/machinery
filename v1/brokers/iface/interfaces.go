@@ -31,6 +31,21 @@ type ResizeablePool interface {
 	SetCapacity(int) <-chan struct{}
 }
 
+// Token represents a unit of concurrency taken from a ResizeablePool.
+// Calling Return() releases the unit back to the originating pool.
+type Token interface {
+	Return()
+}
+
+// ResizeablePoolV2 extends ResizeablePool with token-based capacity management.
+// Brokers type-assert the concurrency argument to this interface to obtain
+// self-returning Tokens instead of raw slots, enabling pools that route each
+// Return() back to the specific sub-pool the slot originated from.
+type ResizeablePoolV2 interface {
+	ResizeablePool
+	PoolWithToken() <-chan Token
+}
+
 type RetrySameMessage interface {
 	Broker
 
