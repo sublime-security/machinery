@@ -30,9 +30,8 @@ type Worker struct {
 	server      *Server
 	ConsumerTag string
 
-	Concurrency             int
-	AdjustableConcurrency   iface.ResizeablePool  // Allows an adjustable concurrency. Concurrency should not be specified if capacity is.
-	AdjustableConcurrencyV2 iface.ResizeablePoolV2 // V2: token-based. Mutually exclusive with AdjustableConcurrency and Concurrency.
+	Concurrency           int
+	AdjustableConcurrency iface.ResizeablePool // Allows an adjustable concurrency. Concurrency should not be specified if capacity is.
 
 	Queue string
 	// errorHandler triggers on ALL errors, including boot, consume, etc.
@@ -92,16 +91,10 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 			concurrency := worker.AdjustableConcurrency
 			var cancel func()
 
-			if worker.AdjustableConcurrencyV2 != nil {
-				if concurrency != nil || worker.Concurrency != 0 {
-					errorsChan <- fmt.Errorf("concurrency should not be specified if capacity is")
-					return
-				}
-				concurrency = worker.AdjustableConcurrencyV2
-			} else if worker.Concurrency != 0 {
+			if worker.Concurrency != 0 {
 				// Fail fast if both are specified to avoid confusion
 				if concurrency != nil {
-					errorsChan <- fmt.Errorf("concurrency should not be specified if capacity is")
+					errorsChan <- fmt.Errorf("Concurrency and AdjustableConcurrency are mutually exclusive")
 					return
 				}
 

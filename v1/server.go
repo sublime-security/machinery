@@ -102,14 +102,6 @@ func (server *Server) NewWorkerWithCapacity(consumerTag string, capacity brokers
 	}
 }
 
-// NewWorkerWithCapacityV2 creates Worker instance with a token-based V2 capacity pool.
-func (server *Server) NewWorkerWithCapacityV2(consumerTag string, capacity brokersiface.ResizeablePoolV2) *Worker {
-	return &Worker{
-		server:                  server,
-		ConsumerTag:             consumerTag,
-		AdjustableConcurrencyV2: capacity,
-	}
-}
 
 // NewCustomQueueWorker creates Worker instance with Custom Queue
 func (server *Server) NewCustomQueueWorker(consumerTag string, concurrency int, queue string) *Worker {

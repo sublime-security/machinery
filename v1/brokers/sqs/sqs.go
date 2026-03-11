@@ -155,8 +155,6 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 			}
 		}
 	}
-
-	return b.GetRetry(), nil
 }
 
 // StopConsuming quits the loop

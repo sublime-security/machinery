@@ -76,8 +76,8 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 						if err := b.consumeOne(output, taskProcessor); err != nil {
 							errorsChan <- err
 						}
-						b.processingWG.Done()
 						token.Return()
+						b.processingWG.Done()
 					}()
 				} else {
 					if err != nil {
