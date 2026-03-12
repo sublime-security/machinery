@@ -75,9 +75,9 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 
 	log.DEBUG.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", *qURL)
 
+	errorsChan := make(chan error)
 	// There could be an outstanding consumeOne call in a goroutine that will return an error that
 	// get put on the channel, so make sure there are no outstanding consumeOne calls before closing the channel
-	errorsChan := make(chan error)
 	defer func() {
 		b.processingWG.Wait()
 		close(errorsChan)
