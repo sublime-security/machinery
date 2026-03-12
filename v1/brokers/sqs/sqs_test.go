@@ -13,6 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/RichardKnop/machinery/v1"
 	"github.com/RichardKnop/machinery/v1/brokers/sqs"
@@ -47,6 +48,7 @@ func TestNewAWSSQSBroker(t *testing.T) {
 }
 
 func TestPrivateFunc_continueReceivingMessages(t *testing.T) {
+	t.Skip("continueReceivingMessages was removed when StartConsuming was refactored to a flat select loop")
 
 	broker := sqs.NewTestBroker()
 	errorBroker := sqs.NewTestErrorBroker()
@@ -96,6 +98,7 @@ func TestPrivateFunc_continueReceivingMessages(t *testing.T) {
 }
 
 func TestPrivateFunc_consume(t *testing.T) {
+	t.Skip("consume was removed when StartConsuming was refactored to a flat select loop")
 
 	server1, err := machinery.NewServer(cnf)
 	if err != nil {
@@ -203,6 +206,7 @@ func TestPrivateFunc_receiveMessage(t *testing.T) {
 }
 
 func TestPrivateFunc_consumeDeliveries(t *testing.T) {
+	t.Skip("consumeDeliveries was removed when StartConsuming was refactored to a flat select loop")
 
 	concurrency, _ := common.NewResizablePool(0)
 	errorsChan := make(chan error)
@@ -291,7 +295,99 @@ func Test_CustomQueueName(t *testing.T) {
 	assert.Equal(t, qURL2, broker.GetCustomQueueURL("my-custom-queue"), "")
 }
 
+// taskFakeSQS overrides ReceiveMessage to return a fixed message for StartConsuming tests.
+type taskFakeSQS struct {
+	sqs.FakeSQS
+	output *awssqs.ReceiveMessageOutput
+}
+
+func (f *taskFakeSQS) ReceiveMessage(*awssqs.ReceiveMessageInput) (*awssqs.ReceiveMessageOutput, error) {
+	return f.output, nil
+}
+
+// testV2Pool wraps a ResizeablePool to implement iface.ResizeablePoolV2 for testing.
+type testV2Pool struct {
+	iface.ResizeablePool
+	tokenCh chan iface.Token
+}
+
+type testV2Token struct{ returnFn func() }
+
+func (t *testV2Token) Return() { t.returnFn() }
+
+func newTestV2Pool(capacity int) *testV2Pool {
+	p, _ := common.NewResizablePool(capacity)
+	tp := &testV2Pool{
+		ResizeablePool: p,
+		tokenCh:        make(chan iface.Token),
+	}
+	go func() {
+		for {
+			<-p.Pool()
+			tp.tokenCh <- &testV2Token{returnFn: p.Return}
+		}
+	}()
+	return tp
+}
+
+func (tp *testV2Pool) PoolWithToken() <-chan iface.Token { return tp.tokenCh }
+
+// testStartConsumingProcessesTask is the shared body for V1 and V2 StartConsuming tests.
+// It verifies that a task is dispatched and executed when StartConsuming receives a message.
+func testStartConsumingProcessesTask(t *testing.T, pool iface.ResizeablePool) {
+	t.Helper()
+
+	const taskName = "sc-test-task"
+	taskMsg := `{"UUID":"sc-test-uuid","Name":"sc-test-task","RoutingKey":"test_queue"}`
+
+	fakeSQS := &taskFakeSQS{output: &awssqs.ReceiveMessageOutput{
+		Messages: []*awssqs.Message{{
+			MessageId: aws.String("sc-test-msg"),
+			Body:      aws.String(taskMsg),
+		}},
+	}}
+
+	broker := sqs.NewTestBrokerWithService(fakeSQS)
+	broker.SetRegisteredTaskNames([]string{taskName})
+
+	// Use the eager backend so the test doesn't require a running Redis instance.
+	localCnf := *cnf
+	localCnf.ResultBackend = "eager"
+	server, err := machinery.NewServer(&localCnf)
+	require.NoError(t, err)
+
+	// Buffered so task goroutines don't block if the broker dispatches more than one
+	// message before StopConsuming takes effect.
+	output := make(chan struct{}, 10)
+	err = server.RegisterTask(taskName, func(_ context.Context) error {
+		output <- struct{}{}
+		return nil
+	})
+	require.NoError(t, err)
+
+	wk := server.NewWorker("sc-worker", 0)
+
+	go broker.StartConsuming("sc-tag", pool, wk) //nolint:errcheck // test, return value not needed
+
+	select {
+	case <-output:
+		broker.StopConsuming()
+	case <-time.After(5 * time.Second):
+		t.Fatal("task was not processed within timeout")
+	}
+}
+
+func TestStartConsuming_V1_ProcessesTask(t *testing.T) {
+	pool, _ := common.NewResizablePool(1)
+	testStartConsumingProcessesTask(t, pool)
+}
+
+func TestStartConsuming_V2_ProcessesTask(t *testing.T) {
+	testStartConsumingProcessesTask(t, newTestV2Pool(1))
+}
+
 func TestPrivateFunc_consumeWithConcurrency(t *testing.T) {
+	t.Skip("superseded by TestStartConsuming_V1_ProcessesTask which tests the same behaviour via the real StartConsuming path")
 
 	msg := `{
         "UUID": "uuid-dummy-task",

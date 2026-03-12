@@ -48,15 +48,58 @@ var badRequestErrRegex = regexp.MustCompile(`4[\d][\d]`)
 func (b *Broker) StartConsuming(consumerTag string, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) (bool, error) {
 	b.Broker.StartConsuming(consumerTag, taskProcessor)
 
-	deliveries := make(chan azqueue.DequeueMessagesResponse)
-
 	b.stopReceivingChan = make(chan int)
 	b.receivingWG.Add(1)
 
+	log.DEBUG.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", b.queueName)
+
+	if v2, ok := concurrency.(iface.ResizeablePoolV2); ok {
+		defer b.receivingWG.Done()
+		tokenPool := v2.PoolWithToken()
+		errorsChan := make(chan error)
+		defer func() {
+			b.processingWG.Wait()
+			close(errorsChan)
+		}()
+
+		for {
+			select {
+			case workerError := <-errorsChan:
+				return b.GetRetry(), workerError
+			case <-b.stopReceivingChan:
+				return false, nil
+			case token := <-tokenPool:
+				output, err := b.receiveMessage()
+				if err == nil && len(output.Messages) > 0 {
+					b.processingWG.Add(1)
+					go func() {
+						if err := b.consumeOne(output, taskProcessor); err != nil {
+							errorsChan <- err
+						}
+						token.Return()
+						b.processingWG.Done()
+					}()
+				} else {
+					if err != nil {
+						log.ERROR.Printf("Queue consume error on %s: %s", b.queueName, err)
+						if badRequestErrRegex.MatchString(err.Error()) {
+							time.Sleep(30 * time.Second)
+						}
+					} else {
+						// No messages, prevent fast looping
+						time.Sleep(100 * time.Millisecond)
+					}
+					token.Return()
+				}
+			}
+		}
+	}
+
+	// V1 path
+	deliveries := make(chan azqueue.DequeueMessagesResponse)
+
 	go func() {
 		defer b.receivingWG.Done()
-
-		log.DEBUG.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", b.queueName)
 
 		pool := concurrency.Pool()
 

@@ -102,6 +102,7 @@ func (server *Server) NewWorkerWithCapacity(consumerTag string, capacity brokers
 	}
 }
 
+
 // NewCustomQueueWorker creates Worker instance with Custom Queue
 func (server *Server) NewCustomQueueWorker(consumerTag string, concurrency int, queue string) *Worker {
 	return &Worker{

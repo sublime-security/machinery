@@ -94,7 +94,7 @@ func (worker *Worker) LaunchAsync(errorsChan chan<- error) {
 			if worker.Concurrency != 0 {
 				// Fail fast if both are specified to avoid confusion
 				if concurrency != nil {
-					errorsChan <- fmt.Errorf("concurrency should not be specified if capacity is")
+					errorsChan <- fmt.Errorf("Concurrency and AdjustableConcurrency are mutually exclusive")
 					return
 				}
 

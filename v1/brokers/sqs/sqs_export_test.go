@@ -128,6 +128,21 @@ func NewTestBroker() *Broker {
 	}
 }
 
+func NewTestBrokerWithService(service sqsiface.SQSAPI) *Broker {
+	cnf := NewTestConfig()
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		SharedConfigState: session.SharedConfigEnable,
+	}))
+	return &Broker{
+		Broker:            common.NewBroker(cnf),
+		sess:              sess,
+		service:           service,
+		processingWG:      sync.WaitGroup{},
+		receivingWG:       sync.WaitGroup{},
+		stopReceivingChan: make(chan int),
+	}
+}
+
 func NewTestErrorBroker() *Broker {
 
 	cnf := NewTestConfig()

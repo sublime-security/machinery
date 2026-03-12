@@ -75,16 +75,49 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 
 	log.DEBUG.Printf("[*] Waiting for messages on queue: %s. To exit press CTRL+C\n", *qURL)
 
-	pool := concurrency.Pool()
-
+	// There could be an outstanding consumeOne call in a goroutine that will return an error that
+	// get put on the channel, so make sure there are no outstanding consumeOne calls before closing the channel
 	errorsChan := make(chan error)
 	defer func() {
-		// There could be an outstanding consumeOne call in a goroutine that will return an error that
-		// get put on the channel, so make sure there are no oustanding consumeOne calls before closing the channel
 		b.processingWG.Wait()
 		close(errorsChan)
 	}()
 
+	if v2, ok := concurrency.(iface.ResizeablePoolV2); ok {
+		tokenPool := v2.PoolWithToken()
+		for {
+			select {
+			case workerError := <-errorsChan:
+				return b.GetRetry(), workerError
+			case <-b.stopReceivingChan:
+				return false, nil
+			case token := <-tokenPool:
+				output, err := b.receiveMessage(qURL)
+				if err != nil {
+					log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
+					if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
+						time.Sleep(30 * time.Second)
+					}
+					token.Return()
+				} else if len(output.Messages) == 0 {
+					log.INFO.Printf("Received Messages returned empty on %s", *qURL)
+					token.Return()
+				} else {
+					b.processingWG.Add(1)
+					go func() {
+						consumeError := b.consumeOne(output, taskProcessor)
+						if consumeError != nil {
+							errorsChan <- consumeError
+						}
+						token.Return()
+						b.processingWG.Done()
+					}()
+				}
+			}
+		}
+	}
+
+	pool := concurrency.Pool()
 	for {
 		select {
 		case workerError := <-errorsChan:
@@ -122,8 +155,6 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 			}
 		}
 	}
-
-	return b.GetRetry(), nil
 }
 
 // StopConsuming quits the loop
