@@ -142,7 +142,9 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 				//return back to pool right away
 				concurrency.Return()
 			} else if len(output.Messages) == 0 {
-				log.INFO.Printf("Received Messages returned empty on %s", *qURL)
+				if rand.Float64() < logSQSEmptySampleRate {
+					log.INFO.Printf("Received Messages returned empty on %s. (sampled at %.3f%%)", *qURL, logSQSEmptySampleRate*100.0)
+				}
 				//return back to pool right away
 				concurrency.Return()
 			} else {
