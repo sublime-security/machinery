@@ -42,7 +42,7 @@ func New(cnf *config.Config) iface.Broker {
 	return b
 }
 
-var badRequestErrRegex = regexp.MustCompile(`4[\d][\d]`)
+var badRequestErrRegex = regexp.MustCompile(`4\d\d`)
 
 // StartConsuming enters a loop and waits for incoming messages
 func (b *Broker) StartConsuming(consumerTag string, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) (bool, error) {
