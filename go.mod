@@ -1,6 +1,6 @@
 module github.com/RichardKnop/machinery
 
-go 1.15
+go 1.26
 
 require (
 	cloud.google.com/go v0.76.0 // indirect
