@@ -10,5 +10,5 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-      # exclude integration tests (require external services) and amqp broker (not used)
+      # exclude integration tests (require external services) and amqp broker (not used and doesn't pass as-is in CI)
       - run: go test $(go list ./... | grep -v integration-tests | grep -v brokers/amqp)
