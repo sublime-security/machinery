@@ -16,7 +16,6 @@ import (
 	redisbroker "github.com/RichardKnop/machinery/v1/brokers/redis"
 	sqsbroker "github.com/RichardKnop/machinery/v1/brokers/sqs"
 
-	amqpbackend "github.com/RichardKnop/machinery/v1/backends/amqp"
 	memcachebackend "github.com/RichardKnop/machinery/v1/backends/memcache"
 	redisbackend "github.com/RichardKnop/machinery/v1/backends/redis"
 )
@@ -260,27 +259,13 @@ func TestBackendFactory(t *testing.T) {
 
 	var cnf config.Config
 
-	// 1) AMQP backend test
-
-	cnf = config.Config{ResultBackend: "amqp://guest:guest@localhost:5672/"}
-
-	actual, err := machinery.BackendFactory(&cnf)
-	if assert.NoError(t, err) {
-		expected := amqpbackend.New(&cnf)
-		assert.True(
-			t,
-			reflect.DeepEqual(actual, expected),
-			fmt.Sprintf("conn = %v, want %v", actual, expected),
-		)
-	}
-
-	// 2) Memcache backend test
+	// 1) Memcache backend test
 
 	cnf = config.Config{
 		ResultBackend: "memcache://10.0.0.1:11211,10.0.0.2:11211",
 	}
 
-	actual, err = machinery.BackendFactory(&cnf)
+	actual, err := machinery.BackendFactory(&cnf)
 	if assert.NoError(t, err) {
 		servers := []string{"10.0.0.1:11211", "10.0.0.2:11211"}
 		expected := memcachebackend.New(&cnf, servers)

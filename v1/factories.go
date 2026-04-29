@@ -17,7 +17,6 @@ import (
 	redisbroker "github.com/RichardKnop/machinery/v1/brokers/redis"
 	sqsbroker "github.com/RichardKnop/machinery/v1/brokers/sqs"
 
-	amqpbackend "github.com/RichardKnop/machinery/v1/backends/amqp"
 	dynamobackend "github.com/RichardKnop/machinery/v1/backends/dynamodb"
 	eagerbackend "github.com/RichardKnop/machinery/v1/backends/eager"
 	backendiface "github.com/RichardKnop/machinery/v1/backends/iface"
@@ -93,17 +92,7 @@ func BrokerFactory(cnf *config.Config) (brokeriface.Broker, error) {
 }
 
 // BackendFactory creates a new object of backends.Interface
-// Currently supported backends are AMQP/S and Memcache
 func BackendFactory(cnf *config.Config) (backendiface.Backend, error) {
-
-	if strings.HasPrefix(cnf.ResultBackend, "amqp://") {
-		return amqpbackend.New(cnf), nil
-	}
-
-	if strings.HasPrefix(cnf.ResultBackend, "amqps://") {
-		return amqpbackend.New(cnf), nil
-	}
-
 	if strings.HasPrefix(cnf.ResultBackend, "memcache://") {
 		parts := strings.Split(cnf.ResultBackend, "memcache://")
 		if len(parts) != 2 {
