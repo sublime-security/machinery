@@ -87,6 +87,7 @@ func TestNewCustomQueueWorker(t *testing.T) {
 	assert.NoError(t, nil)
 }
 
+// eager broker and backend are fully in-memory; no external services required
 func getTestServer(t *testing.T) *machinery.Server {
 	server, err := machinery.NewServer(&config.Config{
 		Broker:        "eager",
