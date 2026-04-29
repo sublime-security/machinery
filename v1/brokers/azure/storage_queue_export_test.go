@@ -21,7 +21,12 @@ func NewTestBroker() *Broker {
 		stopReceivingChan: make(chan int),
 		cfg:               *cnf.Azure,
 		queueName:         cnf.DefaultQueue,
+		newQueueClient:    func(name string) queueClient { return nil },
 	}
+}
+
+func (b *Broker) SetQueueClientFactoryForTest(fn func(string) queueClient) {
+	b.newQueueClient = fn
 }
 
 func (b *Broker) InitializePoolForTest(pool chan struct{}, concurrency int) {
