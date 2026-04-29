@@ -155,7 +155,7 @@ func TestBrokerFactory(t *testing.T) {
 		)
 	}
 
-	// 3) AWS SQS
+	// 2) AWS SQS
 	cnf = config.Config{
 		Broker:       "https://sqs.us-east-2.amazonaws.com/123456789012",
 		DefaultQueue: "machinery_tasks",
@@ -171,7 +171,7 @@ func TestBrokerFactory(t *testing.T) {
 		)
 	}
 
-	// 4) local SQS config should pass with special env variable
+	// 3) local SQS config should pass with special env variable
 	// AWS SQS Invalid SQS Check
 	cnf = config.Config{
 		Broker:       "http://localhost:5672/some-queue",
