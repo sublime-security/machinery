@@ -10,4 +10,5 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.15'
+      # exclude integration tests which have various external dependencies we don't support
       - run: go test $(go list ./... | grep -v integration-tests)
