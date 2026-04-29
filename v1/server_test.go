@@ -87,18 +87,12 @@ func TestNewCustomQueueWorker(t *testing.T) {
 	assert.NoError(t, nil)
 }
 
+// eager broker and backend are fully in-memory; no external services required
 func getTestServer(t *testing.T) *machinery.Server {
 	server, err := machinery.NewServer(&config.Config{
-		Broker:        "amqp://guest:guest@localhost:5672/",
+		Broker:        "eager",
 		DefaultQueue:  "machinery_tasks",
-		ResultBackend: "redis://127.0.0.1:6379",
-		Lock:          "redis://127.0.0.1:6379",
-		AMQP: &config.AMQPConfig{
-			Exchange:      "machinery_exchange",
-			ExchangeType:  "direct",
-			BindingKey:    "machinery_task",
-			PrefetchCount: 1,
-		},
+		ResultBackend: "eager",
 	})
 	if err != nil {
 		t.Error(err)

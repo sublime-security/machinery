@@ -11,14 +11,12 @@ import (
 
 	"github.com/RichardKnop/machinery/v1/config"
 
-	amqpbroker "github.com/RichardKnop/machinery/v1/brokers/amqp"
 	azurebroker "github.com/RichardKnop/machinery/v1/brokers/azure"
 	eagerbroker "github.com/RichardKnop/machinery/v1/brokers/eager"
 	brokeriface "github.com/RichardKnop/machinery/v1/brokers/iface"
 	redisbroker "github.com/RichardKnop/machinery/v1/brokers/redis"
 	sqsbroker "github.com/RichardKnop/machinery/v1/brokers/sqs"
 
-	amqpbackend "github.com/RichardKnop/machinery/v1/backends/amqp"
 	dynamobackend "github.com/RichardKnop/machinery/v1/backends/dynamodb"
 	eagerbackend "github.com/RichardKnop/machinery/v1/backends/eager"
 	backendiface "github.com/RichardKnop/machinery/v1/backends/iface"
@@ -32,16 +30,7 @@ import (
 )
 
 // BrokerFactory creates a new object of iface.Broker
-// Currently only AMQP/S broker is supported
 func BrokerFactory(cnf *config.Config) (brokeriface.Broker, error) {
-	if strings.HasPrefix(cnf.Broker, "amqp://") {
-		return amqpbroker.New(cnf), nil
-	}
-
-	if strings.HasPrefix(cnf.Broker, "amqps://") {
-		return amqpbroker.New(cnf), nil
-	}
-
 	if strings.HasPrefix(cnf.Broker, "redis://") || strings.HasPrefix(cnf.Broker, "rediss://") {
 		var scheme string
 		if strings.HasPrefix(cnf.Broker, "redis://") {
@@ -103,17 +92,7 @@ func BrokerFactory(cnf *config.Config) (brokeriface.Broker, error) {
 }
 
 // BackendFactory creates a new object of backends.Interface
-// Currently supported backends are AMQP/S and Memcache
 func BackendFactory(cnf *config.Config) (backendiface.Backend, error) {
-
-	if strings.HasPrefix(cnf.ResultBackend, "amqp://") {
-		return amqpbackend.New(cnf), nil
-	}
-
-	if strings.HasPrefix(cnf.ResultBackend, "amqps://") {
-		return amqpbackend.New(cnf), nil
-	}
-
 	if strings.HasPrefix(cnf.ResultBackend, "memcache://") {
 		parts := strings.Split(cnf.ResultBackend, "memcache://")
 		if len(parts) != 2 {
