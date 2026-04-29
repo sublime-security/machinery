@@ -11,7 +11,6 @@ import (
 
 	"github.com/RichardKnop/machinery/v1/config"
 
-	amqpbroker "github.com/RichardKnop/machinery/v1/brokers/amqp"
 	azurebroker "github.com/RichardKnop/machinery/v1/brokers/azure"
 	eagerbroker "github.com/RichardKnop/machinery/v1/brokers/eager"
 	brokeriface "github.com/RichardKnop/machinery/v1/brokers/iface"
@@ -32,16 +31,7 @@ import (
 )
 
 // BrokerFactory creates a new object of iface.Broker
-// Currently only AMQP/S broker is supported
 func BrokerFactory(cnf *config.Config) (brokeriface.Broker, error) {
-	if strings.HasPrefix(cnf.Broker, "amqp://") {
-		return amqpbroker.New(cnf), nil
-	}
-
-	if strings.HasPrefix(cnf.Broker, "amqps://") {
-		return amqpbroker.New(cnf), nil
-	}
-
 	if strings.HasPrefix(cnf.Broker, "redis://") || strings.HasPrefix(cnf.Broker, "rediss://") {
 		var scheme string
 		if strings.HasPrefix(cnf.Broker, "redis://") {

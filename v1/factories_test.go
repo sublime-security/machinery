@@ -12,7 +12,6 @@ import (
 	"github.com/RichardKnop/machinery/v1/config"
 	"github.com/stretchr/testify/assert"
 
-	amqpbroker "github.com/RichardKnop/machinery/v1/brokers/amqp"
 	brokeriface "github.com/RichardKnop/machinery/v1/brokers/iface"
 	redisbroker "github.com/RichardKnop/machinery/v1/brokers/redis"
 	sqsbroker "github.com/RichardKnop/machinery/v1/brokers/sqs"
@@ -89,36 +88,7 @@ func TestBrokerFactory(t *testing.T) {
 
 	var cnf config.Config
 
-	// 1) AMQP broker test
-
-	cnf = config.Config{
-		Broker:       "amqp://guest:guest@localhost:5672/",
-		DefaultQueue: "machinery_tasks",
-		AMQP: &config.AMQPConfig{
-			Exchange:      "machinery_exchange",
-			ExchangeType:  "direct",
-			BindingKey:    "machinery_task",
-			PrefetchCount: 1,
-		},
-	}
-
-	actual, err := machinery.BrokerFactory(&cnf)
-	if assert.NoError(t, err) {
-		_, isAMQPBroker := actual.(*amqpbroker.Broker)
-		assert.True(
-			t,
-			isAMQPBroker,
-			"Broker should be instance of *brokers.AMQPBroker",
-		)
-		expected := amqpbroker.New(&cnf)
-		assert.True(
-			t,
-			brokerEqual(actual, expected),
-			fmt.Sprintf("conn = %v, want %v", actual, expected),
-		)
-	}
-
-	// 2) Redis broker test
+	// 1) Redis broker test
 
 	// with password
 	cnf = config.Config{
@@ -126,7 +96,7 @@ func TestBrokerFactory(t *testing.T) {
 		DefaultQueue: "machinery_tasks",
 	}
 
-	actual, err = machinery.BrokerFactory(&cnf)
+	actual, err := machinery.BrokerFactory(&cnf)
 	if assert.NoError(t, err) {
 		_, isRedisBroker := actual.(*redisbroker.Broker)
 		assert.True(
