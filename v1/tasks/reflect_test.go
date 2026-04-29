@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	now = time.Now().UTC().Round(0)
+	now = time.Now().UTC().Round(time.Nanosecond)
 
 	reflectValuesTestCases = []struct {
 		name          string
