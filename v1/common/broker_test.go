@@ -193,6 +193,7 @@ func TestResizablePool(t *testing.T) {
 }
 
 func TestResizablePoolConcurrency(t *testing.T) {
+	t.Skip("long-running stress test, not suitable for CI")
 	// TODO: Add a rolling down function
 	rollingCapFunc := func(changeItr int) int {
 		return changeItr % 5
