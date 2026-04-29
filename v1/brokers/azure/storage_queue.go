@@ -22,8 +22,7 @@ const (
 	maxDelay = time.Minute * 7 // Max supported Visibility Timeout
 )
 
-// Broker represents a AWS SQS broker
-// There are examples on: https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/sqs-example-create-queue.html
+// Broker represents an Azure Storage Queue broker
 type Broker struct {
 	common.Broker
 	processingWG      sync.WaitGroup // use wait group to make sure task processing completes on interrupt signal
