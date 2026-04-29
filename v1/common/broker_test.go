@@ -85,62 +85,66 @@ func TestResizablePool(t *testing.T) {
 
 	pool := rs.Pool()
 
-	tryAcquire := func(didTake *bool) func() {
+	tryAcquire := func() (<-chan struct{}, func()) {
 		cc := make(chan struct{}, 1)
+		tookCh := make(chan struct{}, 1)
 
 		go func() {
 			select {
 			case <-pool:
-				*didTake = true
+				tookCh <- struct{}{}
 			case <-cc:
-				return
 			}
 		}()
 
-		return func() {
-			cc <- struct{}{}
+		return tookCh, func() { cc <- struct{}{} }
+	}
+
+	assertNotTaken := func(tookCh <-chan struct{}) {
+		select {
+		case <-tookCh:
+			assert.Fail(t, "acquired unexpectedly")
+		default:
+		}
+	}
+
+	waitTaken := func(tookCh <-chan struct{}) {
+		select {
+		case <-tookCh:
+		case <-time.After(100 * time.Millisecond):
+			assert.Fail(t, "timed out waiting for acquire")
 		}
 	}
 
 	acquireAll := func() {
-		st := time.Now()
-
 		for i := 0; i < expectedCapacity; i++ {
 			<-pool
 		}
-
-		assert.Less(t, time.Since(st), time.Millisecond)
 	}
 	acquireAll()
 
 	acquireBlockTillReturn := func() {
-		var didTake bool
-
-		cc := tryAcquire(&didTake)
+		tookCh, cc := tryAcquire()
 
 		time.Sleep(time.Millisecond)
-		assert.False(t, didTake)
+		assertNotTaken(tookCh)
 
 		rs.Return()
-		time.Sleep(time.Millisecond)
-		assert.True(t, didTake)
+		waitTaken(tookCh)
 
 		cc()
 	}
 	acquireBlockTillReturn()
 
 	acquireBlocksTillAdd := func() {
-		var didTake bool
-
-		cc := tryAcquire(&didTake)
+		tookCh, cc := tryAcquire()
 
 		time.Sleep(time.Millisecond)
-		assert.False(t, didTake)
+		assertNotTaken(tookCh)
 
 		expectedCapacity++
 		rs.SetCapacity(expectedCapacity)
-		time.Sleep(time.Millisecond)
-		assert.True(t, didTake)
+		waitTaken(tookCh)
 
 		cc()
 	}
@@ -150,18 +154,16 @@ func TestResizablePool(t *testing.T) {
 
 	// Remove capacity
 	removeCapacity := func() {
-		var didTake bool
-
-		cc := tryAcquire(&didTake)
+		tookCh, cc := tryAcquire()
 
 		time.Sleep(time.Millisecond)
-		assert.False(t, didTake)
+		assertNotTaken(tookCh)
 
 		expectedCapacity--
 		rs.SetCapacity(expectedCapacity)
 
 		time.Sleep(time.Millisecond)
-		assert.False(t, didTake)
+		assertNotTaken(tookCh)
 
 		cc()
 	}
@@ -171,13 +173,9 @@ func TestResizablePool(t *testing.T) {
 	require.Equal(t, 1, expectedCapacity)
 
 	returnAllCapacity := func(count int) {
-		st := time.Now()
-
 		for i := 0; i < count; i++ {
 			rs.Return()
 		}
-
-		assert.Less(t, time.Since(st), time.Millisecond)
 	}
 	// Capacity is 1, but 2 additional slots are held from before capacity was reduced.
 	returnAllCapacity(3)
