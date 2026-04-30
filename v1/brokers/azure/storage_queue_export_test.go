@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"context"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue"
@@ -27,6 +28,46 @@ func NewTestBroker() *Broker {
 
 func (b *Broker) SetQueueClientFactoryForTest(fn func(string) queueClient) {
 	b.newQueueClient = fn
+}
+
+// MockClient is an exported queueClient implementation for use in external test packages.
+type MockClient struct {
+	EnqueueFunc func(ctx context.Context, content string, opts *azqueue.EnqueueMessageOptions) (azqueue.EnqueueMessagesResponse, error)
+	DequeueFunc func(ctx context.Context, opts *azqueue.DequeueMessageOptions) (azqueue.DequeueMessagesResponse, error)
+	UpdateFunc  func(ctx context.Context, messageID, popReceipt, content string, opts *azqueue.UpdateMessageOptions) (azqueue.UpdateMessageResponse, error)
+	DeleteFunc  func(ctx context.Context, messageID, popReceipt string, opts *azqueue.DeleteMessageOptions) (azqueue.DeleteMessageResponse, error)
+}
+
+func (m *MockClient) EnqueueMessage(ctx context.Context, content string, opts *azqueue.EnqueueMessageOptions) (azqueue.EnqueueMessagesResponse, error) {
+	if m.EnqueueFunc != nil {
+		return m.EnqueueFunc(ctx, content, opts)
+	}
+	return azqueue.EnqueueMessagesResponse{}, nil
+}
+
+func (m *MockClient) DequeueMessage(ctx context.Context, opts *azqueue.DequeueMessageOptions) (azqueue.DequeueMessagesResponse, error) {
+	if m.DequeueFunc != nil {
+		return m.DequeueFunc(ctx, opts)
+	}
+	return azqueue.DequeueMessagesResponse{}, nil
+}
+
+func (m *MockClient) UpdateMessage(ctx context.Context, messageID, popReceipt, content string, opts *azqueue.UpdateMessageOptions) (azqueue.UpdateMessageResponse, error) {
+	if m.UpdateFunc != nil {
+		return m.UpdateFunc(ctx, messageID, popReceipt, content, opts)
+	}
+	return azqueue.UpdateMessageResponse{}, nil
+}
+
+func (m *MockClient) DeleteMessage(ctx context.Context, messageID, popReceipt string, opts *azqueue.DeleteMessageOptions) (azqueue.DeleteMessageResponse, error) {
+	if m.DeleteFunc != nil {
+		return m.DeleteFunc(ctx, messageID, popReceipt, opts)
+	}
+	return azqueue.DeleteMessageResponse{}, nil
+}
+
+func (b *Broker) SetMockClientForTest(c *MockClient) {
+	b.newQueueClient = func(string) queueClient { return c }
 }
 
 func (b *Broker) InitializePoolForTest(pool chan struct{}, concurrency int) {
