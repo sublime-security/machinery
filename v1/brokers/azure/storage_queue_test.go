@@ -123,7 +123,7 @@ func testStartConsumingProcessesTask(t *testing.T, pool iface.ResizeablePool) {
 
 	wk := server.NewWorker("sc-worker", 0)
 
-	go broker.StartConsuming("sc-tag", pool, wk) //nolint:errcheck
+	go broker.StartConsuming("sc-tag", pool, wk)
 
 	select {
 	case <-output:
