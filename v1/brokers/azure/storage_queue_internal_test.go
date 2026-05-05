@@ -174,14 +174,13 @@ func TestConsumeOne_StopTaskDeletion(t *testing.T) {
 func TestPublish_NoDelay(t *testing.T) {
 	var capturedContent string
 	var capturedOpts *azqueue.EnqueueMessageOptions
-	msgID := "msg-id"
 
 	client := &MockClient{
 		EnqueueFunc: func(_ context.Context, content string, opts *azqueue.EnqueueMessageOptions) (azqueue.EnqueueMessagesResponse, error) {
 			capturedContent = content
 			capturedOpts = opts
 			return azqueue.EnqueueMessagesResponse{
-				Messages: []*azqueue.EnqueuedMessage{{MessageID: &msgID}},
+				Messages: []*azqueue.EnqueuedMessage{{MessageID: new("msg-id")}},
 			}, nil
 		},
 	}
@@ -201,13 +200,12 @@ func TestPublish_NoDelay(t *testing.T) {
 
 func TestPublish_TTL(t *testing.T) {
 	var capturedOpts *azqueue.EnqueueMessageOptions
-	msgID := "msg-id"
 
 	client := &MockClient{
 		EnqueueFunc: func(_ context.Context, _ string, opts *azqueue.EnqueueMessageOptions) (azqueue.EnqueueMessagesResponse, error) {
 			capturedOpts = opts
 			return azqueue.EnqueueMessagesResponse{
-				Messages: []*azqueue.EnqueuedMessage{{MessageID: &msgID}},
+				Messages: []*azqueue.EnqueuedMessage{{MessageID: new("msg-id")}},
 			}, nil
 		},
 	}
@@ -224,13 +222,12 @@ func TestPublish_TTL(t *testing.T) {
 
 func TestPublish_WithDelay(t *testing.T) {
 	var capturedOpts *azqueue.EnqueueMessageOptions
-	msgID := "msg-id"
 
 	client := &MockClient{
 		EnqueueFunc: func(_ context.Context, _ string, opts *azqueue.EnqueueMessageOptions) (azqueue.EnqueueMessagesResponse, error) {
 			capturedOpts = opts
 			return azqueue.EnqueueMessagesResponse{
-				Messages: []*azqueue.EnqueuedMessage{{MessageID: &msgID}},
+				Messages: []*azqueue.EnqueuedMessage{{MessageID: new("msg-id")}},
 			}, nil
 		},
 	}
@@ -247,13 +244,12 @@ func TestPublish_WithDelay(t *testing.T) {
 
 func TestPublish_DelayExceedsMax(t *testing.T) {
 	var capturedOpts *azqueue.EnqueueMessageOptions
-	msgID := "msg-id"
 
 	client := &MockClient{
 		EnqueueFunc: func(_ context.Context, _ string, opts *azqueue.EnqueueMessageOptions) (azqueue.EnqueueMessagesResponse, error) {
 			capturedOpts = opts
 			return azqueue.EnqueueMessagesResponse{
-				Messages: []*azqueue.EnqueuedMessage{{MessageID: &msgID}},
+				Messages: []*azqueue.EnqueuedMessage{{MessageID: new("msg-id")}},
 			}, nil
 		},
 	}
@@ -285,8 +281,6 @@ func TestPublish_EnqueueError(t *testing.T) {
 
 func TestReceiveMessage(t *testing.T) {
 	msgID := "msg-id"
-	popReceipt := "pop-receipt"
-	msgText := "hello"
 
 	var capturedOpts *azqueue.DequeueMessageOptions
 	client := &MockClient{
@@ -295,8 +289,8 @@ func TestReceiveMessage(t *testing.T) {
 			return azqueue.DequeueMessagesResponse{
 				Messages: []*azqueue.DequeuedMessage{{
 					MessageID:   &msgID,
-					PopReceipt:  &popReceipt,
-					MessageText: &msgText,
+					PopReceipt:  new("pop-receipt"),
+					MessageText: new("hello"),
 				}},
 			}, nil
 		},
@@ -309,7 +303,7 @@ func TestReceiveMessage(t *testing.T) {
 	result, err := broker.receiveMessage()
 	assert.NoError(t, err)
 	assert.Len(t, result.Messages, 1)
-	assert.Equal(t, "msg-id", *result.Messages[0].MessageID)
+	assert.Equal(t, msgID, *result.Messages[0].MessageID)
 	assert.Equal(t, int32(30), *capturedOpts.VisibilityTimeout)
 }
 
@@ -340,9 +334,7 @@ func TestDeleteOne(t *testing.T) {
 	broker := NewTestBroker()
 	broker.SetMockClientForTest(client)
 
-	msgID := "msg-id"
-	popReceipt := "pop-receipt"
-	err := broker.deleteOne(&azqueue.DequeuedMessage{MessageID: &msgID, PopReceipt: &popReceipt})
+	err := broker.deleteOne(&azqueue.DequeuedMessage{MessageID: new("msg-id"), PopReceipt: new("pop-receipt")})
 	assert.NoError(t, err)
 	assert.Equal(t, "msg-id", deletedID)
 	assert.Equal(t, "pop-receipt", deletedReceipt)
@@ -358,8 +350,6 @@ func TestDeleteOne_Error(t *testing.T) {
 	broker := NewTestBroker()
 	broker.SetMockClientForTest(client)
 
-	msgID := "msg-id"
-	popReceipt := "pop-receipt"
-	err := broker.deleteOne(&azqueue.DequeuedMessage{MessageID: &msgID, PopReceipt: &popReceipt})
+	err := broker.deleteOne(&azqueue.DequeuedMessage{MessageID: new("msg-id"), PopReceipt: new("pop-receipt")})
 	assert.ErrorContains(t, err, "delete error")
 }

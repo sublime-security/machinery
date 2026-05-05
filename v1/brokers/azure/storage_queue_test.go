@@ -83,9 +83,6 @@ func testStartConsumingProcessesTask(t *testing.T, pool iface.ResizeablePool) {
 	t.Helper()
 
 	const taskName = "sc-test-task"
-	taskMsg := `{"UUID":"sc-test-uuid","Name":"sc-test-task"}`
-	msgID := "sc-msg-id"
-	popReceipt := "sc-pop-receipt"
 
 	var dequeueCount int32
 	client := &azure.MockClient{
@@ -93,9 +90,9 @@ func testStartConsumingProcessesTask(t *testing.T, pool iface.ResizeablePool) {
 			if atomic.AddInt32(&dequeueCount, 1) == 1 {
 				return azqueue.DequeueMessagesResponse{
 					Messages: []*azqueue.DequeuedMessage{{
-						MessageID:   &msgID,
-						PopReceipt:  &popReceipt,
-						MessageText: &taskMsg,
+						MessageID:   new("sc-msg-id"),
+						PopReceipt:  new("sc-pop-receipt"),
+						MessageText: new(`{"UUID":"sc-test-uuid","Name":"sc-test-task"}`),
 					}},
 				}, nil
 			}
