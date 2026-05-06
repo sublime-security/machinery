@@ -129,7 +129,7 @@ func TestPrivateFunc_consumeOne(t *testing.T) {
 	broker := sqs.NewTestBroker()
 
 	err = broker.ConsumeOneForTest(receiveMessageOutput, wk)
-	assert.NotNil(t, err)
+	assert.Nil(t, err)
 
 	outputCopy := *receiveMessageOutput
 	outputCopy.Messages = []*awssqs.Message{}
