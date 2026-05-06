@@ -337,13 +337,23 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 		}
 	}
 
-	// If the task is not registered return an error
-	// and leave the message in the queue
+	// If the task is not registered, invoke the hook (if set) to decide whether
+	// to keep or drop the message. Never return an error — doing so would kill
+	// the consumer loop.
 	if !b.IsTaskRegistered(sig.Name) {
-		if sig.IgnoreWhenTaskNotRegistered {
+		if h := b.GetUnknownTaskHandler(); h != nil {
+			keep, retryIn := h(sig)
+			if !keep {
+				b.deleteOne(delivery)
+			} else if retryIn > 0 {
+				sig.RoutingKey = b.getQueueName(taskProcessor)
+				sig.Delay = retryIn
+				b.RetryMessage(sig)
+			}
+		} else if sig.IgnoreWhenTaskNotRegistered {
 			b.deleteOne(delivery)
 		}
-		return fmt.Errorf("task %s is not registered", sig.Name)
+		return nil
 	}
 
 	// Always set the routing key based on the processor. This ensures it's set to the queue it's pulled off of, even

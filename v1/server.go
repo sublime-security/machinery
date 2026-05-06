@@ -113,6 +113,13 @@ func (server *Server) NewCustomQueueWorker(consumerTag string, concurrency int, 
 	}
 }
 
+// SetUnknownTaskHandler registers a hook called when a task is received that is
+// not registered with this server. The hook controls whether to keep or drop
+// the message and (for SQS/Azure) how long to extend the visibility timeout.
+func (server *Server) SetUnknownTaskHandler(h tasks.UnknownTaskHandler) {
+	server.broker.SetUnknownTaskHandler(h)
+}
+
 // GetBroker returns broker
 func (server *Server) GetBroker() brokersiface.Broker {
 	return server.broker

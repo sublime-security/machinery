@@ -120,7 +120,7 @@ func TestConsumeOne_UnregisteredTask(t *testing.T) {
 	broker.SetMockClientForTest(client)
 
 	err := broker.consumeOne(makeDelivery(string(msgText), "msg-id", "pop-receipt"), nil)
-	assert.ErrorContains(t, err, "is not registered")
+	assert.NoError(t, err)
 	assert.False(t, deleted)
 }
 
@@ -140,7 +140,7 @@ func TestConsumeOne_IgnoreWhenNotRegistered(t *testing.T) {
 	broker.SetMockClientForTest(client)
 
 	err := broker.consumeOne(makeDelivery(string(msgText), "msg-id", "pop-receipt"), nil)
-	assert.ErrorContains(t, err, "is not registered")
+	assert.NoError(t, err)
 	assert.True(t, deleted)
 }
 
