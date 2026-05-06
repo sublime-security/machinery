@@ -24,6 +24,7 @@ type Broker struct {
 	retryFunc           func(chan int)
 	retryStopChan       chan int
 	stopChan            chan int
+	unknownTaskHandler  tasks.UnknownTaskHandler
 }
 
 // NewBroker creates new Broker instance
@@ -116,6 +117,16 @@ func (b *Broker) StopConsuming() {
 	// Notifying the stop channel stops consuming of messages
 	close(b.stopChan)
 	log.WARNING.Print("Stop channel")
+}
+
+// SetUnknownTaskHandler sets the handler called when a task is not registered.
+func (b *Broker) SetUnknownTaskHandler(h tasks.UnknownTaskHandler) {
+	b.unknownTaskHandler = h
+}
+
+// GetUnknownTaskHandler returns the currently registered unknown task handler.
+func (b *Broker) GetUnknownTaskHandler() tasks.UnknownTaskHandler {
+	return b.unknownTaskHandler
 }
 
 // GetRegisteredTaskNames returns registered tasks names

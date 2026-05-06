@@ -309,14 +309,20 @@ func (b *Broker) consumeOne(delivery []byte, taskProcessor iface.TaskProcessor) 
 		return errs.NewErrCouldNotUnmarshalTaskSignature(delivery, err)
 	}
 
-	// If the task is not registered, we requeue it,
-	// there might be different workers for processing specific tasks
+	// If the task is not registered, invoke the hook (if set) to decide whether
+	// to keep or drop the message. For Redis, retryIn is ignored — requeue is
+	// always immediate (no native visibility timeout support).
 	if !b.IsTaskRegistered(signature.Name) {
-		if signature.IgnoreWhenTaskNotRegistered {
-			return nil
+		if h := b.GetUnknownTaskHandler(); h != nil {
+			keep, _ := h(signature)
+			if keep {
+				b.requeueMessage(delivery, taskProcessor)
+			}
+			// else: message already popped; drop it by doing nothing
+		} else if !signature.IgnoreWhenTaskNotRegistered {
+			log.DEBUG.Printf("Task not registered with this worker. Requeuing message: %s", delivery)
+			b.requeueMessage(delivery, taskProcessor)
 		}
-		log.DEBUG.Printf("Task not registered with this worker. Requeuing message: %s", delivery)
-		b.requeueMessage(delivery, taskProcessor)
 		return nil
 	}
 

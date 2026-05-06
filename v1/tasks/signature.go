@@ -108,3 +108,9 @@ func CopySignature(signature *Signature) *Signature {
 	_ = utils.DeepCopy(sig, signature)
 	return sig
 }
+
+// UnknownTaskHandler is called when a broker receives a task that is not
+// registered with this worker. Return keep=false to delete the message.
+// Return keep=true with retryIn>0 to adjust the message visibility timeout
+// (SQS/Azure); retryIn is best-effort for Redis (requeue is immediate).
+type UnknownTaskHandler func(sig *Signature) (keep bool, retryIn time.Duration)
