@@ -266,6 +266,10 @@ func (b *Broker) consumeOne(delivery azqueue.DequeueMessagesResponse, taskProces
 	decoder.UseNumber()
 	if err := decoder.Decode(sig); err != nil {
 		log.ERROR.Printf("unmarshal error. the delivery is %v", delivery)
+		if delErr := b.deleteOne(msg); delErr != nil {
+			log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, delErr)
+		}
+		// Never return an error — doing so would kill the consumer loop.
 		return nil
 	}
 
