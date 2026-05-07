@@ -30,8 +30,7 @@ const (
 	logSQSReceiveSampleRate    = 0.0001           // 0.01% of messages received from SQS will be logged
 	logSQSEmptySampleRate      = 0.00001          // 0.001% of empty received calls to SQS will be logged
 	// maxReceiveCountBeforeDelete is the SQS ApproximateReceiveCount at which an
-	// undecodable message is deleted. This acts as a fallback DLQ for queues that
-	// don't have one configured. Set above our standard DLQ threshold (10) so
+	// undecodable message is deleted. Set above our standard DLQ threshold (10) so
 	// that queues with a DLQ still route there first.
 	maxReceiveCountBeforeDelete = 15
 )
@@ -300,7 +299,7 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 		if rc := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameApproximateReceiveCount]; rc != nil {
 			if count, err := strconv.ParseInt(*rc, 10, 64); err == nil && count >= maxReceiveCountBeforeDelete {
 				if delErr := b.deleteOne(delivery); delErr != nil {
-					log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, delErr)
+					log.ERROR.Printf("deleting the delivery. delivery is %v, Error=%s", delivery, delErr)
 				}
 			}
 		}
@@ -379,7 +378,7 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 	}
 	// Delete message after successfully consuming and processing the message
 	if err = b.deleteOne(delivery); err != nil {
-		log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, err)
+		log.ERROR.Printf("deleting the delivery. delivery is %v, Error=%s", delivery, err)
 	}
 	return err
 }
