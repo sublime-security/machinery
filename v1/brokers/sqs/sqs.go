@@ -29,6 +29,11 @@ const (
 	maxAWSSQSVisibilityTimeout = time.Hour * 12   // Max supported SQS visibility timeout is 12 hours: https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ChangeMessageVisibility.html
 	logSQSReceiveSampleRate    = 0.0001           // 0.01% of messages received from SQS will be logged
 	logSQSEmptySampleRate      = 0.00001          // 0.001% of empty received calls to SQS will be logged
+	// maxReceiveCountBeforeDelete is the SQS ApproximateReceiveCount at which an
+	// undecodable message is deleted. This acts as a fallback DLQ for queues that
+	// don't have one configured. Set above our standard DLQ threshold (10) so
+	// that queues with a DLQ still route there first.
+	maxReceiveCountBeforeDelete = 15
 )
 
 // Broker represents a AWS SQS broker
@@ -292,6 +297,13 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 	decoder.UseNumber()
 	if err := decoder.Decode(sig); err != nil {
 		log.ERROR.Printf("unmarshal error. the delivery is %v", delivery)
+		if rc := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameApproximateReceiveCount]; rc != nil {
+			if count, err := strconv.ParseInt(*rc, 10, 64); err == nil && count >= maxReceiveCountBeforeDelete {
+				if delErr := b.deleteOne(delivery); delErr != nil {
+					log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, delErr)
+				}
+			}
+		}
 		// Never return an error — doing so would kill the consumer loop.
 		return nil
 	}
