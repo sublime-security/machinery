@@ -112,7 +112,7 @@ type AzureConfig struct {
 
 	// Optional DLQ. Set DLQ to enable; MaxReceives and DLQTTL have defaults when zero.
 	DLQ         *azqueue.QueueClient // pre-bound DLQ queue client; nil ⇒ DLQ disabled
-	MaxReceives int32                // max DequeueCount before redriving; 0 with DLQ set ⇒ 10
+	MaxReceives int64                // max DequeueCount before redriving; 0 with DLQ set ⇒ 10
 	DLQTTL      time.Duration        // TTL for DLQ messages; 0 ⇒ 30 days
 }
 

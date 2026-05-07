@@ -90,7 +90,7 @@ func (b *Broker) ConsumeOneForTest(delivery azqueue.DequeueMessagesResponse, tas
 // SetDLQClientForTest configures the broker's DLQ client and applies the same
 // defaulting logic as New() (0 maxReceives → 10, 0 dlqTTL → 30 days).
 // Pass c=nil to disable DLQ.
-func (b *Broker) SetDLQClientForTest(c queueClient, maxReceives int32, dlqTTL time.Duration) {
+func (b *Broker) SetDLQClientForTest(c queueClient, maxReceives int64, dlqTTL time.Duration) {
 	b.dlqClient = c
 	if c != nil {
 		b.maxReceives = maxReceives

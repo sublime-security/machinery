@@ -39,7 +39,7 @@ type Broker struct {
 	queueName         string
 	newQueueClient    func(string) queueClient
 	dlqClient         queueClient   // nil ⇒ DLQ disabled
-	maxReceives       int32
+	maxReceives       int64
 	dlqTTL            time.Duration
 }
 
@@ -275,7 +275,7 @@ func (b *Broker) consumeOne(delivery azqueue.DequeueMessagesResponse, taskProces
 
 	msg := delivery.Messages[0]
 
-	if b.dlqClient != nil && msg.DequeueCount != nil && *msg.DequeueCount > int64(b.maxReceives) {
+	if b.dlqClient != nil && msg.DequeueCount != nil && *msg.DequeueCount > b.maxReceives {
 		if err := b.dlqOne(msg); err != nil {
 			log.ERROR.Printf("error enqueueing message %s to DLQ: %s", *msg.MessageID, err)
 			return nil // leave on source; visibility timeout will retry
