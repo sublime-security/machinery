@@ -142,7 +142,49 @@ func TestPrivateFunc_consumeOne(t *testing.T) {
 		},
 	}
 	err = broker.ConsumeOneForTest(&outputCopy, wk)
-	assert.NotNil(t, err)
+	assert.Nil(t, err)
+}
+
+type deleteTrackingSQS struct {
+	sqs.FakeSQS
+	deleted bool
+}
+
+func (f *deleteTrackingSQS) DeleteMessage(*awssqs.DeleteMessageInput) (*awssqs.DeleteMessageOutput, error) {
+	f.deleted = true
+	return &awssqs.DeleteMessageOutput{}, nil
+}
+
+func invalidJSONMessage(receiveCount string) *awssqs.ReceiveMessageOutput {
+	msg := &awssqs.Message{
+		MessageId:     aws.String("msg-id"),
+		ReceiptHandle: aws.String("receipt"),
+		Body:          aws.String("not valid json"),
+	}
+	if receiveCount != "" {
+		msg.Attributes = map[string]*string{
+			awssqs.MessageSystemAttributeNameApproximateReceiveCount: aws.String(receiveCount),
+		}
+	}
+	return &awssqs.ReceiveMessageOutput{Messages: []*awssqs.Message{msg}}
+}
+
+func TestConsumeOne_InvalidJSON_BelowThreshold(t *testing.T) {
+	fakeSvc := &deleteTrackingSQS{}
+	broker := sqs.NewTestBrokerWithService(fakeSvc)
+
+	err := broker.ConsumeOneForTest(invalidJSONMessage("14"), nil)
+	assert.Nil(t, err)
+	assert.False(t, fakeSvc.deleted)
+}
+
+func TestConsumeOne_InvalidJSON_AtThreshold(t *testing.T) {
+	fakeSvc := &deleteTrackingSQS{}
+	broker := sqs.NewTestBrokerWithService(fakeSvc)
+
+	err := broker.ConsumeOneForTest(invalidJSONMessage("15"), nil)
+	assert.Nil(t, err)
+	assert.True(t, fakeSvc.deleted)
 }
 
 func TestPrivateFunc_initializePool(t *testing.T) {

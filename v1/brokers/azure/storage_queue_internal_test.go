@@ -100,7 +100,7 @@ func TestConsumeOne_InvalidJSON(t *testing.T) {
 	broker.SetMockClientForTest(client)
 
 	err := broker.consumeOne(makeDelivery("not valid json", "msg-id", "pop-receipt"), nil)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.True(t, deleted)
 }
 
