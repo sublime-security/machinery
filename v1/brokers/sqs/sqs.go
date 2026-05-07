@@ -299,7 +299,7 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 		if rc := delivery.Messages[0].Attributes[awssqs.MessageSystemAttributeNameApproximateReceiveCount]; rc != nil {
 			if count, err := strconv.ParseInt(*rc, 10, 64); err == nil && count >= maxReceiveCountBeforeDelete {
 				if delErr := b.deleteOne(delivery); delErr != nil {
-					log.ERROR.Printf("deleting the delivery. delivery is %v, Error=%s", delivery, delErr)
+					log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, delErr)
 				}
 			}
 		}
@@ -378,7 +378,7 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 	}
 	// Delete message after successfully consuming and processing the message
 	if err = b.deleteOne(delivery); err != nil {
-		log.ERROR.Printf("deleting the delivery. delivery is %v, Error=%s", delivery, err)
+		log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, err)
 	}
 	return err
 }
