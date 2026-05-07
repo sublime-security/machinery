@@ -142,7 +142,34 @@ func TestPrivateFunc_consumeOne(t *testing.T) {
 		},
 	}
 	err = broker.ConsumeOneForTest(&outputCopy, wk)
-	assert.NotNil(t, err)
+	assert.Nil(t, err)
+}
+
+type deleteTrackingSQS struct {
+	sqs.FakeSQS
+	deleted bool
+}
+
+func (f *deleteTrackingSQS) DeleteMessage(*awssqs.DeleteMessageInput) (*awssqs.DeleteMessageOutput, error) {
+	f.deleted = true
+	return &awssqs.DeleteMessageOutput{}, nil
+}
+
+func TestConsumeOne_InvalidJSON(t *testing.T) {
+	fakeSvc := &deleteTrackingSQS{}
+	broker := sqs.NewTestBrokerWithService(fakeSvc)
+
+	output := &awssqs.ReceiveMessageOutput{
+		Messages: []*awssqs.Message{{
+			MessageId:     aws.String("msg-id"),
+			ReceiptHandle: aws.String("receipt"),
+			Body:          aws.String("not valid json"),
+		}},
+	}
+
+	err := broker.ConsumeOneForTest(output, nil)
+	assert.Nil(t, err)
+	assert.False(t, fakeSvc.deleted)
 }
 
 func TestPrivateFunc_initializePool(t *testing.T) {
