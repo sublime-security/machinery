@@ -38,6 +38,12 @@ func makeDelivery(msgText, msgID, popReceipt string) azqueue.DequeueMessagesResp
 	}
 }
 
+func makeDeliveryWithCount(msgText, msgID, popReceipt string, dequeueCount int64) azqueue.DequeueMessagesResponse {
+	d := makeDelivery(msgText, msgID, popReceipt)
+	d.Messages[0].DequeueCount = &dequeueCount
+	return d
+}
+
 func TestBadRequestErrRegex(t *testing.T) {
 	t.Parallel()
 
@@ -87,7 +93,7 @@ func TestConsumeOne_ValidMessage_Success(t *testing.T) {
 	assert.Equal(t, "msg-id", deletedID)
 }
 
-func TestConsumeOne_InvalidJSON(t *testing.T) {
+func TestConsumeOne_InvalidJSON_BelowDeleteThreshold(t *testing.T) {
 	deleted := false
 	client := &MockClient{
 		DeleteFunc: func(_ context.Context, _, _ string, _ *azqueue.DeleteMessageOptions) (azqueue.DeleteMessageResponse, error) {
@@ -99,7 +105,26 @@ func TestConsumeOne_InvalidJSON(t *testing.T) {
 	broker := NewTestBroker()
 	broker.SetMockClientForTest(client)
 
-	err := broker.consumeOne(makeDelivery("not valid json", "msg-id", "pop-receipt"), nil)
+	// DequeueCount below maxReceiveCountBeforeDelete — leave on queue so a
+	// configured DLQ can still catch it before we give up and delete.
+	err := broker.consumeOne(makeDeliveryWithCount("not valid json", "msg-id", "pop-receipt", maxReceiveCountBeforeDelete-1), nil)
+	assert.NoError(t, err)
+	assert.False(t, deleted)
+}
+
+func TestConsumeOne_InvalidJSON_AtDeleteThreshold(t *testing.T) {
+	deleted := false
+	client := &MockClient{
+		DeleteFunc: func(_ context.Context, _, _ string, _ *azqueue.DeleteMessageOptions) (azqueue.DeleteMessageResponse, error) {
+			deleted = true
+			return azqueue.DeleteMessageResponse{}, nil
+		},
+	}
+
+	broker := NewTestBroker()
+	broker.SetMockClientForTest(client)
+
+	err := broker.consumeOne(makeDeliveryWithCount("not valid json", "msg-id", "pop-receipt", maxReceiveCountBeforeDelete), nil)
 	assert.NoError(t, err)
 	assert.True(t, deleted)
 }

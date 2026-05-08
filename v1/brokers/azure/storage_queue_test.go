@@ -181,11 +181,12 @@ func TestConsumeOne_DLQ_BelowThreshold_ProcessesNormally(t *testing.T) {
 	broker.SetDLQClientForTest(dlqMock, 10, time.Hour)
 
 	// DequeueCount == MaxReceives: not over threshold, DLQ must not trigger.
-	// Invalid JSON causes the normal decode-failure path (source delete, error returned).
+	// Invalid JSON + count below delete threshold (15) — source must also be left
+	// alone so the DLQ can catch it on the next pop (count 11 > maxReceives 10).
 	broker.ConsumeOneForTest(dlqTestDelivery(10, "not-valid-json"), nil)
 
 	assert.Equal(t, int32(0), dlqEnqueueCalls.Load(), "DLQ should not be invoked at threshold")
-	assert.Equal(t, int32(1), sourceDeleteCalls.Load(), "source should be deleted via normal path")
+	assert.Equal(t, int32(0), sourceDeleteCalls.Load(), "source should not be deleted; DLQ will catch it next pop")
 }
 
 func TestConsumeOne_DLQ_AboveThreshold_Redrives(t *testing.T) {
