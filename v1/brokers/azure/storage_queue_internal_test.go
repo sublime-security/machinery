@@ -9,6 +9,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue"
 	"github.com/RichardKnop/machinery/v1/brokers/errs"
+	"github.com/RichardKnop/machinery/v1/config"
 	"github.com/RichardKnop/machinery/v1/tasks"
 	"github.com/stretchr/testify/assert"
 )
@@ -377,4 +378,19 @@ func TestDeleteOne_Error(t *testing.T) {
 
 	err := broker.deleteOne(&azqueue.DequeuedMessage{MessageID: new("msg-id"), PopReceipt: new("pop-receipt")})
 	assert.ErrorContains(t, err, "delete error")
+}
+
+func TestNew_DLQ_Defaults(t *testing.T) {
+	t.Parallel()
+
+	cnf := &config.Config{
+		DefaultQueue: "test_queue",
+		Azure: &config.AzureConfig{
+			Client: &azqueue.ServiceClient{},
+			DLQ:    &azqueue.QueueClient{}, // non-nil enables DLQ branch in New()
+		},
+	}
+	b := New(cnf).(*Broker)
+	assert.Equal(t, int64(10), b.maxReceives, "maxReceives should default to 10 when zero")
+	assert.Equal(t, 30*24*time.Hour, b.dlqTTL, "dlqTTL should default to 30 days when zero")
 }

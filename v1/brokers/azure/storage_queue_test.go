@@ -194,11 +194,15 @@ func TestConsumeOne_DLQ_AboveThreshold_Redrives(t *testing.T) {
 
 	var dlqEnqueueCalls, sourceDeleteCalls atomic.Int32
 	var capturedContent string
+	var capturedTTL int32
 
 	dlqMock := &azure.MockClient{
-		EnqueueFunc: func(_ context.Context, content string, _ *azqueue.EnqueueMessageOptions) (azqueue.EnqueueMessagesResponse, error) {
+		EnqueueFunc: func(_ context.Context, content string, opts *azqueue.EnqueueMessageOptions) (azqueue.EnqueueMessagesResponse, error) {
 			dlqEnqueueCalls.Add(1)
 			capturedContent = content
+			if opts != nil && opts.TimeToLive != nil {
+				capturedTTL = *opts.TimeToLive
+			}
 			return azqueue.EnqueueMessagesResponse{}, nil
 		},
 	}
@@ -219,6 +223,7 @@ func TestConsumeOne_DLQ_AboveThreshold_Redrives(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), dlqEnqueueCalls.Load())
 	assert.Equal(t, body, capturedContent, "DLQ should receive the original message body")
+	assert.Equal(t, int32(time.Hour.Seconds()), capturedTTL, "DLQ enqueue should use the configured TTL")
 	assert.Equal(t, int32(1), sourceDeleteCalls.Load())
 }
 
@@ -363,31 +368,3 @@ func TestConsumeOne_DLQ_DefaultMaxReceives(t *testing.T) {
 	assert.Equal(t, int32(1), dlqEnqueueCalls.Load(), "DequeueCount=11 must trigger DLQ (default MaxReceives=10)")
 }
 
-func TestConsumeOne_DLQ_DefaultTTL(t *testing.T) {
-	t.Parallel()
-
-	var capturedTTL int32
-
-	dlqMock := &azure.MockClient{
-		EnqueueFunc: func(_ context.Context, _ string, opts *azqueue.EnqueueMessageOptions) (azqueue.EnqueueMessagesResponse, error) {
-			if opts != nil && opts.TimeToLive != nil {
-				capturedTTL = *opts.TimeToLive
-			}
-			return azqueue.EnqueueMessagesResponse{}, nil
-		},
-	}
-	sourceMock := &azure.MockClient{
-		DeleteFunc: func(_ context.Context, _, _ string, _ *azqueue.DeleteMessageOptions) (azqueue.DeleteMessageResponse, error) {
-			return azqueue.DeleteMessageResponse{}, nil
-		},
-	}
-
-	broker := azure.NewTestBroker()
-	broker.SetMockClientForTest(sourceMock)
-	broker.SetDLQClientForTest(dlqMock, 10, 0) // dlqTTL=0 → default 30 days
-
-	err := broker.ConsumeOneForTest(dlqTestDelivery(11, "body"), nil)
-	require.NoError(t, err)
-
-	assert.Equal(t, int32((30*24*time.Hour).Seconds()), capturedTTL, "DLQ TTL must default to 30 days")
-}
