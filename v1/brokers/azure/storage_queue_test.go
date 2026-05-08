@@ -171,7 +171,7 @@ func dlqTestDelivery(dequeueCount int64, body string) azqueue.DequeueMessagesRes
 	}
 }
 
-func TestConsumeOne_DLQ_BelowThreshold_ProcessesNormally(t *testing.T) {
+func TestConsumeOne_DLQ_ThresholdTransition(t *testing.T) {
 	t.Parallel()
 
 	var dlqEnqueueCalls, sourceDeleteCalls atomic.Int32
@@ -195,13 +195,19 @@ func TestConsumeOne_DLQ_BelowThreshold_ProcessesNormally(t *testing.T) {
 	broker.SetDLQClientForTest(dlqMock, 10, time.Hour)
 
 	processor := &countingProcessor{}
-	// DequeueCount == MaxReceives (10): not over threshold, DLQ must not trigger.
-	// The message processes normally; the next pop (count 11 > maxReceives 10) will redrive.
-	broker.ConsumeOneForTest(dlqTestDelivery(10, validDLQTaskBody), processor)
 
-	assert.Equal(t, int32(0), dlqEnqueueCalls.Load(), "DLQ should not be invoked at threshold")
+	// DequeueCount=10: at threshold, must NOT redrive — processes normally.
+	broker.ConsumeOneForTest(dlqTestDelivery(10, validDLQTaskBody), processor)
+	assert.Equal(t, int32(0), dlqEnqueueCalls.Load(), "DequeueCount=10 must not trigger DLQ")
 	assert.Equal(t, int32(1), processor.count.Load(), "task should be processed normally at threshold")
 	assert.Equal(t, int32(1), sourceDeleteCalls.Load(), "source deleted after normal processing")
+
+	// DequeueCount=11: over threshold, must redrive.
+	err := broker.ConsumeOneForTest(dlqTestDelivery(11, validDLQTaskBody), processor)
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), dlqEnqueueCalls.Load(), "DequeueCount=11 must trigger DLQ")
+	assert.Equal(t, int32(1), processor.count.Load(), "message must not be processed when redriven to DLQ")
+	assert.Equal(t, int32(2), sourceDeleteCalls.Load(), "source deleted from DLQ path")
 }
 
 func TestConsumeOne_DLQ_AboveThreshold_Redrives(t *testing.T) {
@@ -363,39 +369,4 @@ func TestConsumeOne_DLQ_Disabled_IgnoresDequeueCount(t *testing.T) {
 	assert.Equal(t, int32(1), sourceDeleteCalls.Load(), "source deleted after normal processing")
 }
 
-func TestConsumeOne_DLQ_DefaultMaxReceives(t *testing.T) {
-	t.Parallel()
-
-	var dlqEnqueueCalls atomic.Int32
-
-	dlqMock := &azure.MockClient{
-		EnqueueFunc: func(_ context.Context, _ string, _ *azqueue.EnqueueMessageOptions) (azqueue.EnqueueMessagesResponse, error) {
-			dlqEnqueueCalls.Add(1)
-			return azqueue.EnqueueMessagesResponse{}, nil
-		},
-	}
-	sourceMock := &azure.MockClient{
-		DeleteFunc: func(_ context.Context, _, _ string, _ *azqueue.DeleteMessageOptions) (azqueue.DeleteMessageResponse, error) {
-			return azqueue.DeleteMessageResponse{}, nil
-		},
-	}
-
-	broker := azure.NewTestBroker()
-	broker.SetRegisteredTaskNames([]string{"unknown-dlq-task"})
-	broker.SetMockClientForTest(sourceMock)
-	broker.SetDLQClientForTest(dlqMock, 0, time.Hour) // maxReceives=0 → default 10
-
-	processor := &countingProcessor{}
-
-	// DequeueCount=10: at threshold, must NOT redrive.
-	broker.ConsumeOneForTest(dlqTestDelivery(10, validDLQTaskBody), processor)
-	assert.Equal(t, int32(0), dlqEnqueueCalls.Load(), "DequeueCount=10 must not trigger DLQ (default MaxReceives=10)")
-	assert.Equal(t, int32(1), processor.count.Load(), "message should be processed normally at threshold")
-
-	// DequeueCount=11: over threshold, must redrive.
-	err := broker.ConsumeOneForTest(dlqTestDelivery(11, validDLQTaskBody), processor)
-	require.NoError(t, err)
-	assert.Equal(t, int32(1), dlqEnqueueCalls.Load(), "DequeueCount=11 must trigger DLQ (default MaxReceives=10)")
-	assert.Equal(t, int32(1), processor.count.Load(), "message must not be processed when redriven to DLQ")
-}
 
