@@ -158,7 +158,6 @@ func TestStartConsuming_V2_ProcessesTask(t *testing.T) {
 }
 
 // dlqTestDelivery builds a single-message DequeueMessagesResponse for DLQ tests.
-// Invalid JSON is fine for tests that exercise the pre-decode DLQ check.
 func dlqTestDelivery(dequeueCount int64, body string) azqueue.DequeueMessagesResponse {
 	msgID := "test-msg-id"
 	popReceipt := "test-pop-receipt"
