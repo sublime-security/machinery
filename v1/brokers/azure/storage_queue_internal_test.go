@@ -106,9 +106,9 @@ func TestConsumeOne_InvalidJSON_BelowDeleteThreshold(t *testing.T) {
 	broker := NewTestBroker()
 	broker.SetMockClientForTest(client)
 
-	// DequeueCount below maxReceiveCountBeforeDelete — leave on queue so a
+	// DequeueCount below decodeFailureDeleteThreshold — leave on queue so a
 	// configured DLQ can still catch it before we give up and delete.
-	err := broker.consumeOne(makeDeliveryWithCount("not valid json", "msg-id", "pop-receipt", maxReceiveCountBeforeDelete-1), nil)
+	err := broker.consumeOne(makeDeliveryWithCount("not valid json", "msg-id", "pop-receipt", decodeFailureDeleteThreshold-1), nil)
 	assert.NoError(t, err)
 	assert.False(t, deleted)
 }
@@ -125,7 +125,7 @@ func TestConsumeOne_InvalidJSON_AtDeleteThreshold(t *testing.T) {
 	broker := NewTestBroker()
 	broker.SetMockClientForTest(client)
 
-	err := broker.consumeOne(makeDeliveryWithCount("not valid json", "msg-id", "pop-receipt", maxReceiveCountBeforeDelete), nil)
+	err := broker.consumeOne(makeDeliveryWithCount("not valid json", "msg-id", "pop-receipt", decodeFailureDeleteThreshold), nil)
 	assert.NoError(t, err)
 	assert.True(t, deleted)
 }

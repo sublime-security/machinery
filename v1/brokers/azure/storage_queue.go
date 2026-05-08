@@ -20,10 +20,10 @@ import (
 
 const (
 	maxDelay = time.Minute * 7 // Max supported Visibility Timeout
-	// maxReceiveCountBeforeDelete is the DequeueCount at which an undecodable
+	// decodeFailureDeleteThreshold is the DequeueCount at which an undecodable
 	// message is deleted. Set above the default DLQ threshold (10) so that
 	// queues with a DLQ still route there first.
-	maxReceiveCountBeforeDelete int64 = 15
+	decodeFailureDeleteThreshold int64 = 15
 )
 
 type queueClient interface {
@@ -297,7 +297,7 @@ func (b *Broker) consumeOne(delivery azqueue.DequeueMessagesResponse, taskProces
 	decoder.UseNumber()
 	if err := decoder.Decode(sig); err != nil {
 		log.ERROR.Printf("unmarshal error. the delivery is %v", delivery)
-		if msg.DequeueCount != nil && *msg.DequeueCount >= maxReceiveCountBeforeDelete {
+		if msg.DequeueCount != nil && *msg.DequeueCount >= decodeFailureDeleteThreshold {
 			if delErr := b.deleteOne(msg); delErr != nil {
 				log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, delErr)
 			}
