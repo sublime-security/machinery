@@ -190,15 +190,18 @@ func TestConsumeOne_DLQ_BelowThreshold_ProcessesNormally(t *testing.T) {
 	}
 
 	broker := azure.NewTestBroker()
+	broker.SetRegisteredTaskNames([]string{"unknown-dlq-task"})
 	broker.SetMockClientForTest(sourceMock)
 	broker.SetDLQClientForTest(dlqMock, 10, time.Hour)
 
+	processor := &countingProcessor{}
 	// DequeueCount == MaxReceives (10): not over threshold, DLQ must not trigger.
-	// The message is left on the queue; the next pop (count 11 > maxReceives 10) will redrive.
-	broker.ConsumeOneForTest(dlqTestDelivery(10, validDLQTaskBody), nil)
+	// The message processes normally; the next pop (count 11 > maxReceives 10) will redrive.
+	broker.ConsumeOneForTest(dlqTestDelivery(10, validDLQTaskBody), processor)
 
 	assert.Equal(t, int32(0), dlqEnqueueCalls.Load(), "DLQ should not be invoked at threshold")
-	assert.Equal(t, int32(0), sourceDeleteCalls.Load(), "unregistered task without handler is left on queue")
+	assert.Equal(t, int32(1), processor.count.Load(), "task should be processed normally at threshold")
+	assert.Equal(t, int32(1), sourceDeleteCalls.Load(), "source deleted after normal processing")
 }
 
 func TestConsumeOne_DLQ_AboveThreshold_Redrives(t *testing.T) {
@@ -229,13 +232,15 @@ func TestConsumeOne_DLQ_AboveThreshold_Redrives(t *testing.T) {
 	broker.SetMockClientForTest(sourceMock)
 	broker.SetDLQClientForTest(dlqMock, 10, time.Hour)
 
+	processor := &countingProcessor{}
 	body := validDLQTaskBody
-	err := broker.ConsumeOneForTest(dlqTestDelivery(11, body), nil)
+	err := broker.ConsumeOneForTest(dlqTestDelivery(11, body), processor)
 
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), dlqEnqueueCalls.Load())
 	assert.Equal(t, body, capturedContent, "DLQ should receive the original message body")
 	assert.Equal(t, int32(time.Hour.Seconds()), capturedTTL, "DLQ enqueue should use the configured TTL")
+	assert.Equal(t, int32(0), processor.count.Load(), "message must not be processed when redriven to DLQ")
 	assert.Equal(t, int32(1), sourceDeleteCalls.Load())
 }
 
@@ -260,13 +265,15 @@ func TestConsumeOne_DLQ_EnqueueFails_RetrySucceeds(t *testing.T) {
 	broker.SetMockClientForTest(sourceMock)
 	broker.SetDLQClientForTest(failingDLQ, 10, time.Hour)
 
+	processor := &countingProcessor{}
 	delivery := dlqTestDelivery(11, validDLQTaskBody)
 
 	// First attempt: DLQ enqueue fails — consumer must survive.
-	err := broker.ConsumeOneForTest(delivery, nil)
+	err := broker.ConsumeOneForTest(delivery, processor)
 	require.NoError(t, err, "consumer must survive DLQ enqueue failure")
 	assert.Equal(t, int32(1), dlqEnqueueCalls.Load(), "DLQ enqueue was attempted")
 	assert.Equal(t, int32(0), sourceDeleteCalls.Load(), "source must not be deleted when DLQ fails")
+	assert.Equal(t, int32(0), processor.count.Load(), "message must not be processed while DLQ redrive is in progress")
 
 	// Simulate visibility-timeout redelivery: swap in a working DLQ client.
 	workingDLQ := &azure.MockClient{
@@ -277,10 +284,11 @@ func TestConsumeOne_DLQ_EnqueueFails_RetrySucceeds(t *testing.T) {
 	}
 	broker.SetDLQClientForTest(workingDLQ, 10, time.Hour)
 
-	err = broker.ConsumeOneForTest(delivery, nil)
+	err = broker.ConsumeOneForTest(delivery, processor)
 	require.NoError(t, err)
 	assert.Equal(t, int32(2), dlqEnqueueCalls.Load(), "DLQ enqueue retried on second attempt")
 	assert.Equal(t, int32(1), sourceDeleteCalls.Load(), "source deleted after successful DLQ enqueue")
+	assert.Equal(t, int32(0), processor.count.Load(), "message must not be processed when redriven to DLQ")
 }
 
 func TestConsumeOne_DLQ_DeleteFails_RetryEnqueuesDuplicate(t *testing.T) {
@@ -304,13 +312,15 @@ func TestConsumeOne_DLQ_DeleteFails_RetryEnqueuesDuplicate(t *testing.T) {
 	broker.SetMockClientForTest(failingSourceMock)
 	broker.SetDLQClientForTest(dlqMock, 10, time.Hour)
 
+	processor := &countingProcessor{}
 	delivery := dlqTestDelivery(11, validDLQTaskBody)
 
 	// First attempt: DLQ enqueue OK, source delete fails — consumer must survive.
-	err := broker.ConsumeOneForTest(delivery, nil)
+	err := broker.ConsumeOneForTest(delivery, processor)
 	require.NoError(t, err, "consumer must survive source delete failure")
 	assert.Equal(t, int32(1), dlqEnqueueCalls.Load(), "DLQ enqueue succeeded")
 	assert.Equal(t, int32(1), sourceDeleteCalls.Load(), "source delete was attempted")
+	assert.Equal(t, int32(0), processor.count.Load(), "message must not be processed while DLQ redrive is in progress")
 
 	// Simulate visibility-timeout redelivery: swap in a working source mock.
 	workingSourceMock := &azure.MockClient{
@@ -321,11 +331,12 @@ func TestConsumeOne_DLQ_DeleteFails_RetryEnqueuesDuplicate(t *testing.T) {
 	}
 	broker.SetMockClientForTest(workingSourceMock)
 
-	err = broker.ConsumeOneForTest(delivery, nil)
+	err = broker.ConsumeOneForTest(delivery, processor)
 	require.NoError(t, err)
 	// DLQ receives a duplicate — this is the documented at-least-once semantic.
 	assert.Equal(t, int32(2), dlqEnqueueCalls.Load(), "DLQ receives a duplicate on retry (at-least-once)")
 	assert.Equal(t, int32(2), sourceDeleteCalls.Load(), "source successfully deleted on retry")
+	assert.Equal(t, int32(0), processor.count.Load(), "message must not be processed when redriven to DLQ")
 }
 
 func TestConsumeOne_DLQ_Disabled_IgnoresDequeueCount(t *testing.T) {
@@ -370,16 +381,21 @@ func TestConsumeOne_DLQ_DefaultMaxReceives(t *testing.T) {
 	}
 
 	broker := azure.NewTestBroker()
+	broker.SetRegisteredTaskNames([]string{"unknown-dlq-task"})
 	broker.SetMockClientForTest(sourceMock)
 	broker.SetDLQClientForTest(dlqMock, 0, time.Hour) // maxReceives=0 → default 10
 
+	processor := &countingProcessor{}
+
 	// DequeueCount=10: at threshold, must NOT redrive.
-	broker.ConsumeOneForTest(dlqTestDelivery(10, validDLQTaskBody), nil)
+	broker.ConsumeOneForTest(dlqTestDelivery(10, validDLQTaskBody), processor)
 	assert.Equal(t, int32(0), dlqEnqueueCalls.Load(), "DequeueCount=10 must not trigger DLQ (default MaxReceives=10)")
+	assert.Equal(t, int32(1), processor.count.Load(), "message should be processed normally at threshold")
 
 	// DequeueCount=11: over threshold, must redrive.
-	err := broker.ConsumeOneForTest(dlqTestDelivery(11, validDLQTaskBody), nil)
+	err := broker.ConsumeOneForTest(dlqTestDelivery(11, validDLQTaskBody), processor)
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), dlqEnqueueCalls.Load(), "DequeueCount=11 must trigger DLQ (default MaxReceives=10)")
+	assert.Equal(t, int32(1), processor.count.Load(), "message must not be processed when redriven to DLQ")
 }
 
