@@ -13,9 +13,23 @@ import (
 	"github.com/RichardKnop/machinery/v1/brokers/iface"
 	"github.com/RichardKnop/machinery/v1/common"
 	"github.com/RichardKnop/machinery/v1/config"
+	"github.com/RichardKnop/machinery/v1/tasks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// validDLQTaskBody is a minimal valid task JSON used in DLQ tests that need a
+// decodable message without exercising task processing logic.
+const validDLQTaskBody = `{"UUID":"dlq-test-uuid","Name":"unknown-dlq-task"}`
+
+type countingProcessor struct{ count atomic.Int32 }
+
+func (p *countingProcessor) Process(_ *tasks.Signature, _ tasks.ExtendForSignatureFunc) error {
+	p.count.Add(1)
+	return nil
+}
+func (p *countingProcessor) CustomQueue() string     { return "" }
+func (p *countingProcessor) PreConsumeHandler() bool { return true }
 
 func TestNew_ImplementsInterfaces(t *testing.T) {
 	t.Parallel()
@@ -180,13 +194,12 @@ func TestConsumeOne_DLQ_BelowThreshold_ProcessesNormally(t *testing.T) {
 	broker.SetMockClientForTest(sourceMock)
 	broker.SetDLQClientForTest(dlqMock, 10, time.Hour)
 
-	// DequeueCount == MaxReceives: not over threshold, DLQ must not trigger.
-	// Invalid JSON + count below delete threshold (15) — source must also be left
-	// alone so the DLQ can catch it on the next pop (count 11 > maxReceives 10).
-	broker.ConsumeOneForTest(dlqTestDelivery(10, "not-valid-json"), nil)
+	// DequeueCount == MaxReceives (10): not over threshold, DLQ must not trigger.
+	// The message is left on the queue; the next pop (count 11 > maxReceives 10) will redrive.
+	broker.ConsumeOneForTest(dlqTestDelivery(10, validDLQTaskBody), nil)
 
 	assert.Equal(t, int32(0), dlqEnqueueCalls.Load(), "DLQ should not be invoked at threshold")
-	assert.Equal(t, int32(0), sourceDeleteCalls.Load(), "source should not be deleted; DLQ will catch it next pop")
+	assert.Equal(t, int32(0), sourceDeleteCalls.Load(), "unregistered task without handler is left on queue")
 }
 
 func TestConsumeOne_DLQ_AboveThreshold_Redrives(t *testing.T) {
@@ -217,7 +230,7 @@ func TestConsumeOne_DLQ_AboveThreshold_Redrives(t *testing.T) {
 	broker.SetMockClientForTest(sourceMock)
 	broker.SetDLQClientForTest(dlqMock, 10, time.Hour)
 
-	const body = "original-message-body"
+	body := validDLQTaskBody
 	err := broker.ConsumeOneForTest(dlqTestDelivery(11, body), nil)
 
 	require.NoError(t, err)
@@ -248,7 +261,7 @@ func TestConsumeOne_DLQ_EnqueueFails_RetrySucceeds(t *testing.T) {
 	broker.SetMockClientForTest(sourceMock)
 	broker.SetDLQClientForTest(failingDLQ, 10, time.Hour)
 
-	delivery := dlqTestDelivery(11, "some-body")
+	delivery := dlqTestDelivery(11, validDLQTaskBody)
 
 	// First attempt: DLQ enqueue fails — consumer must survive.
 	err := broker.ConsumeOneForTest(delivery, nil)
@@ -292,7 +305,7 @@ func TestConsumeOne_DLQ_DeleteFails_RetryEnqueuesDuplicate(t *testing.T) {
 	broker.SetMockClientForTest(failingSourceMock)
 	broker.SetDLQClientForTest(dlqMock, 10, time.Hour)
 
-	delivery := dlqTestDelivery(11, "some-body")
+	delivery := dlqTestDelivery(11, validDLQTaskBody)
 
 	// First attempt: DLQ enqueue OK, source delete fails — consumer must survive.
 	err := broker.ConsumeOneForTest(delivery, nil)
@@ -329,12 +342,15 @@ func TestConsumeOne_DLQ_Disabled_IgnoresDequeueCount(t *testing.T) {
 	}
 
 	broker := azure.NewTestBroker() // no DLQ configured
+	broker.SetRegisteredTaskNames([]string{"unknown-dlq-task"})
 	broker.SetMockClientForTest(sourceMock)
 
-	// Very high DequeueCount, but DLQ is not configured — normal path taken.
-	broker.ConsumeOneForTest(dlqTestDelivery(100, "not-valid-json"), nil)
+	processor := &countingProcessor{}
+	// Very high DequeueCount, but DLQ is not configured — normal processing path is taken.
+	broker.ConsumeOneForTest(dlqTestDelivery(100, validDLQTaskBody), processor)
 
-	assert.Equal(t, int32(1), sourceDeleteCalls.Load(), "source deleted via normal decode-failure path")
+	assert.Equal(t, int32(1), processor.count.Load(), "task was processed normally")
+	assert.Equal(t, int32(1), sourceDeleteCalls.Load(), "source deleted after normal processing")
 }
 
 func TestConsumeOne_DLQ_DefaultMaxReceives(t *testing.T) {
@@ -359,11 +375,11 @@ func TestConsumeOne_DLQ_DefaultMaxReceives(t *testing.T) {
 	broker.SetDLQClientForTest(dlqMock, 0, time.Hour) // maxReceives=0 → default 10
 
 	// DequeueCount=10: at threshold, must NOT redrive.
-	broker.ConsumeOneForTest(dlqTestDelivery(10, "not-valid-json"), nil)
+	broker.ConsumeOneForTest(dlqTestDelivery(10, validDLQTaskBody), nil)
 	assert.Equal(t, int32(0), dlqEnqueueCalls.Load(), "DequeueCount=10 must not trigger DLQ (default MaxReceives=10)")
 
 	// DequeueCount=11: over threshold, must redrive.
-	err := broker.ConsumeOneForTest(dlqTestDelivery(11, "not-valid-json"), nil)
+	err := broker.ConsumeOneForTest(dlqTestDelivery(11, validDLQTaskBody), nil)
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), dlqEnqueueCalls.Load(), "DequeueCount=11 must trigger DLQ (default MaxReceives=10)")
 }
