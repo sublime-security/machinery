@@ -94,11 +94,11 @@ func (b *Broker) SetDLQClientForTest(c queueClient, maxReceives int64, dlqTTL ti
 	b.dlqClient = c
 	if c != nil {
 		b.maxReceives = maxReceives
-		if b.maxReceives == 0 {
+		if b.maxReceives <= 0 {
 			b.maxReceives = 10
 		}
 		b.dlqTTL = dlqTTL
-		if b.dlqTTL == 0 {
+		if b.dlqTTL <= 0 {
 			b.dlqTTL = 30 * 24 * time.Hour
 		}
 	}

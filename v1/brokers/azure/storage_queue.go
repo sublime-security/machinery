@@ -58,11 +58,11 @@ func New(cnf *config.Config) iface.Broker {
 	if cnf.Azure.DLQ != nil {
 		b.dlqClient = cnf.Azure.DLQ
 		b.maxReceives = cnf.Azure.MaxReceives
-		if b.maxReceives == 0 {
+		if b.maxReceives <= 0 {
 			b.maxReceives = 10
 		}
 		b.dlqTTL = cnf.Azure.DLQTTL
-		if b.dlqTTL == 0 {
+		if b.dlqTTL <= 0 {
 			b.dlqTTL = 30 * 24 * time.Hour
 		}
 	}
