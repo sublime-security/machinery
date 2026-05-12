@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue"
 	"github.com/RichardKnop/machinery/v1/brokers/iface"
@@ -84,4 +85,21 @@ func (b *Broker) GetStopReceivingChanForTest() chan int {
 
 func (b *Broker) ConsumeOneForTest(delivery azqueue.DequeueMessagesResponse, taskProcessor iface.TaskProcessor) error {
 	return b.consumeOne(delivery, taskProcessor)
+}
+
+// SetDLQClientForTest configures the broker's DLQ client and applies the same
+// defaulting logic as New() (0 maxReceives → 10, 0 dlqTTL → 30 days).
+// Pass c=nil to disable DLQ.
+func (b *Broker) SetDLQClientForTest(c queueClient, maxReceives int64, dlqTTL time.Duration) {
+	b.dlqClient = c
+	if c != nil {
+		b.maxReceives = maxReceives
+		if b.maxReceives <= 0 {
+			b.maxReceives = 10
+		}
+		b.dlqTTL = dlqTTL
+		if b.dlqTTL <= 0 {
+			b.dlqTTL = 30 * 24 * time.Hour
+		}
+	}
 }

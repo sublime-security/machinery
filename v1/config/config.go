@@ -109,6 +109,11 @@ type AzureConfig struct {
 	TTL time.Duration
 	// Visibility timeout, same concept as SQS, how long to exclusively hold the message.
 	VisibilityTimeout time.Duration
+
+	// Optional DLQ. Set DLQ to enable; MaxReceives and DLQTTL have defaults when zero.
+	DLQ         *azqueue.QueueClient // pre-bound DLQ queue client; nil ⇒ DLQ disabled
+	MaxReceives int64                // max DequeueCount before redriving; 0 with DLQ set ⇒ 10
+	DLQTTL      time.Duration        // TTL for DLQ messages; 0 ⇒ 30 days
 }
 
 // RedisConfig ...

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue"
 	"github.com/RichardKnop/machinery/v1/brokers/errs"
+	"github.com/RichardKnop/machinery/v1/config"
 	"github.com/RichardKnop/machinery/v1/tasks"
 	"github.com/stretchr/testify/assert"
 )
@@ -36,6 +37,12 @@ func makeDelivery(msgText, msgID, popReceipt string) azqueue.DequeueMessagesResp
 			MessageText: &msgText,
 		}},
 	}
+}
+
+func makeDeliveryWithCount(msgText, msgID, popReceipt string, dequeueCount int64) azqueue.DequeueMessagesResponse {
+	d := makeDelivery(msgText, msgID, popReceipt)
+	d.Messages[0].DequeueCount = &dequeueCount
+	return d
 }
 
 func TestBadRequestErrRegex(t *testing.T) {
@@ -87,7 +94,7 @@ func TestConsumeOne_ValidMessage_Success(t *testing.T) {
 	assert.Equal(t, "msg-id", deletedID)
 }
 
-func TestConsumeOne_InvalidJSON(t *testing.T) {
+func TestConsumeOne_InvalidJSON_BelowDeleteThreshold(t *testing.T) {
 	deleted := false
 	client := &MockClient{
 		DeleteFunc: func(_ context.Context, _, _ string, _ *azqueue.DeleteMessageOptions) (azqueue.DeleteMessageResponse, error) {
@@ -99,7 +106,26 @@ func TestConsumeOne_InvalidJSON(t *testing.T) {
 	broker := NewTestBroker()
 	broker.SetMockClientForTest(client)
 
-	err := broker.consumeOne(makeDelivery("not valid json", "msg-id", "pop-receipt"), nil)
+	// DequeueCount below decodeFailureDeleteThreshold — leave on queue so a
+	// configured DLQ can still catch it before we give up and delete.
+	err := broker.consumeOne(makeDeliveryWithCount("not valid json", "msg-id", "pop-receipt", decodeFailureDeleteThreshold-1), nil)
+	assert.NoError(t, err)
+	assert.False(t, deleted)
+}
+
+func TestConsumeOne_InvalidJSON_AtDeleteThreshold(t *testing.T) {
+	deleted := false
+	client := &MockClient{
+		DeleteFunc: func(_ context.Context, _, _ string, _ *azqueue.DeleteMessageOptions) (azqueue.DeleteMessageResponse, error) {
+			deleted = true
+			return azqueue.DeleteMessageResponse{}, nil
+		},
+	}
+
+	broker := NewTestBroker()
+	broker.SetMockClientForTest(client)
+
+	err := broker.consumeOne(makeDeliveryWithCount("not valid json", "msg-id", "pop-receipt", decodeFailureDeleteThreshold), nil)
 	assert.NoError(t, err)
 	assert.True(t, deleted)
 }
@@ -352,4 +378,19 @@ func TestDeleteOne_Error(t *testing.T) {
 
 	err := broker.deleteOne(&azqueue.DequeuedMessage{MessageID: new("msg-id"), PopReceipt: new("pop-receipt")})
 	assert.ErrorContains(t, err, "delete error")
+}
+
+func TestNew_DLQ_Defaults(t *testing.T) {
+	t.Parallel()
+
+	cnf := &config.Config{
+		DefaultQueue: "test_queue",
+		Azure: &config.AzureConfig{
+			Client: &azqueue.ServiceClient{},
+			DLQ:    &azqueue.QueueClient{}, // non-nil enables DLQ branch in New()
+		},
+	}
+	b := New(cnf).(*Broker)
+	assert.Equal(t, int64(10), b.maxReceives, "maxReceives should default to 10 when zero")
+	assert.Equal(t, 30*24*time.Hour, b.dlqTTL, "dlqTTL should default to 30 days when zero")
 }

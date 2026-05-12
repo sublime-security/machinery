@@ -20,6 +20,10 @@ import (
 
 const (
 	maxDelay = time.Minute * 7 // Max supported Visibility Timeout
+	// decodeFailureDeleteThreshold is the DequeueCount at which an undecodable
+	// message is deleted. Set above the default DLQ threshold (10) so that
+	// queues with a DLQ still route there first.
+	decodeFailureDeleteThreshold int64 = 15
 )
 
 type queueClient interface {
@@ -38,6 +42,9 @@ type Broker struct {
 	cfg               config.AzureConfig
 	queueName         string
 	newQueueClient    func(string) queueClient
+	dlqClient         queueClient   // nil ⇒ DLQ disabled
+	maxReceives       int64
+	dlqTTL            time.Duration
 }
 
 // New creates new Broker instance
@@ -47,6 +54,17 @@ func New(cnf *config.Config) iface.Broker {
 	b.queueName = cnf.DefaultQueue
 	b.newQueueClient = func(name string) queueClient {
 		return cnf.Azure.Client.NewQueueClient(name)
+	}
+	if cnf.Azure.DLQ != nil {
+		b.dlqClient = cnf.Azure.DLQ
+		b.maxReceives = cnf.Azure.MaxReceives
+		if b.maxReceives <= 0 {
+			b.maxReceives = 10
+		}
+		b.dlqTTL = cnf.Azure.DLQTTL
+		if b.dlqTTL <= 0 {
+			b.dlqTTL = 30 * 24 * time.Hour
+		}
 	}
 
 	return b
@@ -261,13 +279,28 @@ func (b *Broker) consumeOne(delivery azqueue.DequeueMessagesResponse, taskProces
 
 	msg := delivery.Messages[0]
 
+	if b.dlqClient != nil && msg.DequeueCount != nil && *msg.DequeueCount > b.maxReceives {
+		if err := b.dlqOne(msg); err != nil {
+			log.ERROR.Printf("error enqueueing message %s to DLQ: %s", *msg.MessageID, err)
+			return nil // leave on source; visibility timeout will retry
+		}
+		if err := b.deleteOne(msg); err != nil {
+			log.ERROR.Printf("error deleting message %s from source after DLQ enqueue: %s", *msg.MessageID, err)
+			return nil // duplicate in DLQ on next attempt; do not exit consume loop
+		}
+		log.INFO.Printf("moved message %s to DLQ after %d receives", *msg.MessageID, *msg.DequeueCount)
+		return nil
+	}
+
 	sig := new(tasks.Signature)
 	decoder := json.NewDecoder(strings.NewReader(*msg.MessageText))
 	decoder.UseNumber()
 	if err := decoder.Decode(sig); err != nil {
 		log.ERROR.Printf("unmarshal error. the delivery is %v", delivery)
-		if delErr := b.deleteOne(msg); delErr != nil {
-			log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, delErr)
+		if msg.DequeueCount != nil && *msg.DequeueCount >= decodeFailureDeleteThreshold {
+			if delErr := b.deleteOne(msg); delErr != nil {
+				log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, delErr)
+			}
 		}
 		// Never return an error — doing so would kill the consumer loop.
 		return nil
@@ -330,6 +363,17 @@ func (b *Broker) consumeOne(delivery azqueue.DequeueMessagesResponse, taskProces
 	if err = b.deleteOne(msg); err != nil {
 		log.ERROR.Printf("error when deleting the delivery. delivery is %v, Error=%s", delivery, err)
 	}
+	return err
+}
+
+// dlqOne enqueues a message to the configured DLQ.
+func (b *Broker) dlqOne(msg *azqueue.DequeuedMessage) error {
+	ttlSeconds := int32(b.dlqTTL.Seconds())
+	_, err := b.dlqClient.EnqueueMessage(
+		context.Background(),
+		*msg.MessageText,
+		&azqueue.EnqueueMessageOptions{TimeToLive: &ttlSeconds},
+	)
 	return err
 }
 
