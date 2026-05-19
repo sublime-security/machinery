@@ -2,6 +2,8 @@ package eager_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/RichardKnop/machinery/v1/backends/eager"
@@ -339,4 +341,57 @@ func (s *EagerBackendTestSuite) getTaskSignature(taskUUID string) *tasks.Signatu
 
 func TestEagerBackendMain(t *testing.T) {
 	suite.Run(t, &EagerBackendTestSuite{})
+}
+
+// TestEagerBackend_ConcurrentAccess exercises concurrent reads and writes against the eager
+// backend's internal maps. Prior to introducing a single mutex covering all map accesses, a
+// concurrent caller mix like this would deterministically trigger Go's "concurrent map read and
+// map write" fatal under -race (and frequently without). The test runs all operations the
+// backend exposes — SetState*, GetState, InitGroup, GroupCompleted, GroupTaskStates, PurgeState,
+// PurgeGroupMeta — so that any unprotected map access in any method is exercised.
+func TestEagerBackend_ConcurrentAccess(t *testing.T) {
+	backend := eager.New()
+
+	const numGoroutines = 50
+	const numIterations = 200
+
+	// Seed some baseline state so the readers have non-empty data to scan.
+	for i := range numGoroutines {
+		sig := &tasks.Signature{UUID: fmt.Sprintf("seed-%d", i)}
+		if err := backend.SetStatePending(sig); err != nil {
+			t.Fatalf("seed SetStatePending: %v", err)
+		}
+	}
+	if err := backend.InitGroup("seed-group", []string{"seed-0", "seed-1", "seed-2"}); err != nil {
+		t.Fatalf("seed InitGroup: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for g := range numGoroutines {
+		wg.Go(func() {
+			for i := range numIterations {
+				uuid := fmt.Sprintf("task-%d-%d", g, i)
+				sig := &tasks.Signature{UUID: uuid}
+
+				// Writers: cycle through the SetState* surface.
+				_ = backend.SetStatePending(sig)
+				_ = backend.SetStateReceived(sig)
+				_ = backend.SetStateStarted(sig)
+				_ = backend.SetStateSuccess(sig, nil)
+
+				// Readers: GetState, group-state surfaces.
+				_, _ = backend.GetState(uuid)
+				_, _ = backend.GetState(fmt.Sprintf("seed-%d", g))
+				_, _ = backend.GroupCompleted("seed-group", 3)
+				_, _ = backend.GroupTaskStates("seed-group", 3)
+
+				// Group writers + purge: exercise the groups-map and tasks-map mutation paths.
+				groupID := fmt.Sprintf("group-%d-%d", g, i)
+				_ = backend.InitGroup(groupID, []string{uuid})
+				_ = backend.PurgeGroupMeta(groupID)
+				_ = backend.PurgeState(uuid)
+			}
+		})
+	}
+	wg.Wait()
 }

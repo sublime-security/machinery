@@ -42,12 +42,17 @@ func (e ErrTasknotFound) Error() string {
 	return fmt.Sprintf("Task not found: %v", e.taskUUID)
 }
 
-// Backend represents an "eager" in-memory result backend
+// Backend represents an "eager" in-memory result backend.
+//
+// All methods are safe for concurrent use. A single sync.Mutex guards both the groups and tasks
+// maps. This is intentionally coarse: the eager backend is intended for tests and local development,
+// where contention is low and a single lock keeps the invariant ("one caller at a time touches
+// internal state") easy to reason about.
 type Backend struct {
 	common.Backend
-	groups     map[string][]string
-	tasks      map[string][]byte
-	stateMutex sync.Mutex
+	mu     sync.Mutex
+	groups map[string][]string
+	tasks  map[string][]byte
 }
 
 // New creates EagerBackend instance
@@ -65,12 +70,17 @@ func (b *Backend) InitGroup(groupUUID string, taskUUIDs []string) error {
 	// copy every task
 	tasks = append(tasks, taskUUIDs...)
 
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.groups[groupUUID] = tasks
 	return nil
 }
 
 // GroupCompleted returns true if all tasks in a group finished
 func (b *Backend) GroupCompleted(groupUUID string, groupTaskCount int) (bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	tasks, ok := b.groups[groupUUID]
 	if !ok {
 		return false, NewErrGroupNotFound(groupUUID)
@@ -78,7 +88,7 @@ func (b *Backend) GroupCompleted(groupUUID string, groupTaskCount int) (bool, er
 
 	var countSuccessTasks = 0
 	for _, v := range tasks {
-		t, err := b.GetState(v)
+		t, err := b.getStateLocked(v)
 		if err != nil {
 			return false, err
 		}
@@ -93,6 +103,9 @@ func (b *Backend) GroupCompleted(groupUUID string, groupTaskCount int) (bool, er
 
 // GroupTaskStates returns states of all tasks in the group
 func (b *Backend) GroupTaskStates(groupUUID string, groupTaskCount int) ([]*tasks.TaskState, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	taskUUIDs, ok := b.groups[groupUUID]
 	if !ok {
 		return nil, NewErrGroupNotFound(groupUUID)
@@ -100,7 +113,7 @@ func (b *Backend) GroupTaskStates(groupUUID string, groupTaskCount int) ([]*task
 
 	ret := make([]*tasks.TaskState, 0, groupTaskCount)
 	for _, taskUUID := range taskUUIDs {
-		t, err := b.GetState(taskUUID)
+		t, err := b.getStateLocked(taskUUID)
 		if err != nil {
 			return nil, err
 		}
@@ -157,6 +170,13 @@ func (b *Backend) SetStateFailure(signature *tasks.Signature, err string) error 
 
 // GetState returns the latest task state
 func (b *Backend) GetState(taskUUID string) (*tasks.TaskState, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.getStateLocked(taskUUID)
+}
+
+// getStateLocked is the unlocked variant of GetState. Caller must hold b.mu.
+func (b *Backend) getStateLocked(taskUUID string) (*tasks.TaskState, error) {
 	tasktStateBytes, ok := b.tasks[taskUUID]
 	if !ok {
 		return nil, NewErrTasknotFound(taskUUID)
@@ -174,6 +194,9 @@ func (b *Backend) GetState(taskUUID string) (*tasks.TaskState, error) {
 
 // PurgeState deletes stored task state
 func (b *Backend) PurgeState(taskUUID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	_, ok := b.tasks[taskUUID]
 	if !ok {
 		return NewErrTasknotFound(taskUUID)
@@ -185,6 +208,9 @@ func (b *Backend) PurgeState(taskUUID string) error {
 
 // PurgeGroupMeta deletes stored group meta data
 func (b *Backend) PurgeGroupMeta(groupUUID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	_, ok := b.groups[groupUUID]
 	if !ok {
 		return NewErrGroupNotFound(groupUUID)
@@ -196,13 +222,13 @@ func (b *Backend) PurgeGroupMeta(groupUUID string) error {
 
 func (b *Backend) updateState(s *tasks.TaskState) error {
 	// simulate the behavior of json marshal/unmarshal
-	b.stateMutex.Lock()
-	defer b.stateMutex.Unlock()
 	msg, err := json.Marshal(s)
 	if err != nil {
 		return fmt.Errorf("Marshal task state error: %v", err)
 	}
 
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.tasks[s.TaskUUID] = msg
 	return nil
 }
