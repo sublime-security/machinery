@@ -1,6 +1,7 @@
 package sqs
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -142,6 +143,7 @@ func NewTestBroker() *Broker {
 		processingWG:      sync.WaitGroup{},
 		receivingWG:       sync.WaitGroup{},
 		stopReceivingChan: make(chan int),
+		consumeCtx:        context.Background(),
 	}
 }
 
@@ -157,6 +159,7 @@ func NewTestBrokerWithService(service sqsiface.SQSAPI) *Broker {
 		processingWG:      sync.WaitGroup{},
 		receivingWG:       sync.WaitGroup{},
 		stopReceivingChan: make(chan int),
+		consumeCtx:        context.Background(),
 	}
 }
 
@@ -175,6 +178,7 @@ func NewTestErrorBroker() *Broker {
 		processingWG:      sync.WaitGroup{},
 		receivingWG:       sync.WaitGroup{},
 		stopReceivingChan: make(chan int),
+		consumeCtx:        context.Background(),
 	}
 }
 

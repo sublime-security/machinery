@@ -59,6 +59,8 @@ type Broker struct {
 // New creates new Broker instance
 func New(cnf *config.Config) iface.Broker {
 	b := &Broker{Broker: common.NewBroker(cnf)}
+	// StartConsuming replaces this with a cancellable context.
+	b.consumeCtx = context.Background()
 	if cnf.SQS != nil && cnf.SQS.Client != nil {
 		// Use provided *SQS client
 		b.service = cnf.SQS.Client
@@ -460,13 +462,8 @@ func (b *Broker) receiveMessage(qURL *string) (*awssqs.ReceiveMessageOutput, err
 	if visibilityTimeout != nil {
 		input.VisibilityTimeout = aws.Int64(int64(*visibilityTimeout))
 	}
-	// consumeCtx is nil only when receiveMessage is called outside StartConsuming (e.g. tests).
-	ctx := b.consumeCtx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	start := time.Now()
-	result, err := b.service.ReceiveMessageWithContext(ctx, input)
+	result, err := b.service.ReceiveMessageWithContext(b.consumeCtx, input)
 	if rand.Float64() < logSQSReceiveSampleRate {
 		messageID := "unknown"
 		if err == nil && len(result.Messages) > 0 {

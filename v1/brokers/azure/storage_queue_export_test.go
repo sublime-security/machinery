@@ -24,6 +24,7 @@ func NewTestBroker() *Broker {
 		cfg:               *cnf.Azure,
 		queueName:         cnf.DefaultQueue,
 		newQueueClient:    func(name string) queueClient { return nil },
+		consumeCtx:        context.Background(),
 	}
 }
 

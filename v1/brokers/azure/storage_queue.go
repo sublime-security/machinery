@@ -59,6 +59,8 @@ type Broker struct {
 // New creates new Broker instance
 func New(cnf *config.Config) iface.Broker {
 	b := &Broker{Broker: common.NewBroker(cnf)}
+	// StartConsuming replaces this with a cancellable context.
+	b.consumeCtx = context.Background()
 	b.cfg = *cnf.Azure
 	b.queueName = cnf.DefaultQueue
 	b.newQueueClient = func(name string) queueClient {
@@ -154,6 +156,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 				if err == nil && len(output.Messages) > 0 {
 					deliveries <- output
 				} else {
+					// A cancelled consumeCtx surfaces as a receive error, so b.consumeCtx.Err() != nil implies err != nil.
 					if err != nil && b.consumeCtx.Err() == nil {
 						log.ERROR.Printf("Queue consume error on %s: %s", b.queueName, err)
 						if badRequestErrRegex.MatchString(err.Error()) {
@@ -413,13 +416,8 @@ func (b *Broker) deleteOne(message *azqueue.DequeuedMessage) error {
 
 // receiveMessage is a method receives a message from specified queue url
 func (b *Broker) receiveMessage() (azqueue.DequeueMessagesResponse, error) {
-	// consumeCtx is nil only when receiveMessage is called outside StartConsuming (e.g. tests).
-	ctx := b.consumeCtx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	visibilityTimeoutS := int32(b.cfg.VisibilityTimeout.Seconds())
-	result, err := b.newQueueClient(b.queueName).DequeueMessage(ctx, &azqueue.DequeueMessageOptions{VisibilityTimeout: &visibilityTimeoutS})
+	result, err := b.newQueueClient(b.queueName).DequeueMessage(b.consumeCtx, &azqueue.DequeueMessageOptions{VisibilityTimeout: &visibilityTimeoutS})
 	if err != nil {
 		return azqueue.DequeueMessagesResponse{}, err
 	}
