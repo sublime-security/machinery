@@ -12,6 +12,7 @@ import (
 	"github.com/RichardKnop/machinery/v1/brokers/iface"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -153,6 +154,12 @@ type deleteTrackingSQS struct {
 func (f *deleteTrackingSQS) DeleteMessage(*awssqs.DeleteMessageInput) (*awssqs.DeleteMessageOutput, error) {
 	f.deleted = true
 	return &awssqs.DeleteMessageOutput{}, nil
+}
+
+// DeleteMessageWithContext delegates to this type's own DeleteMessage; the inherited
+// FakeSQS variant would bypass the deleted-tracking override (Go embedding isn't virtual).
+func (f *deleteTrackingSQS) DeleteMessageWithContext(_ aws.Context, in *awssqs.DeleteMessageInput, _ ...request.Option) (*awssqs.DeleteMessageOutput, error) {
+	return f.DeleteMessage(in)
 }
 
 func invalidJSONMessage(receiveCount string) *awssqs.ReceiveMessageOutput {
@@ -347,6 +354,12 @@ func (f *taskFakeSQS) ReceiveMessage(*awssqs.ReceiveMessageInput) (*awssqs.Recei
 	return f.output, nil
 }
 
+// ReceiveMessageWithContext delegates to this type's own ReceiveMessage; the inherited
+// FakeSQS variant would return the global fixture instead of f.output.
+func (f *taskFakeSQS) ReceiveMessageWithContext(_ aws.Context, in *awssqs.ReceiveMessageInput, _ ...request.Option) (*awssqs.ReceiveMessageOutput, error) {
+	return f.ReceiveMessage(in)
+}
+
 // testV2Pool wraps a ResizeablePool to implement iface.ResizeablePoolV2 for testing.
 type testV2Pool struct {
 	iface.ResizeablePool
@@ -426,6 +439,87 @@ func TestStartConsuming_V1_ProcessesTask(t *testing.T) {
 
 func TestStartConsuming_V2_ProcessesTask(t *testing.T) {
 	testStartConsumingProcessesTask(t, newTestV2Pool(1))
+}
+
+// blockingReceiveSQS parks in ReceiveMessage until its context is cancelled (idle queue mid-long-poll at shutdown).
+type blockingReceiveSQS struct {
+	sqs.FakeSQS
+	entered chan struct{}
+	ctxErr  chan error
+	once    sync.Once
+}
+
+func (f *blockingReceiveSQS) ReceiveMessageWithContext(ctx aws.Context, _ *awssqs.ReceiveMessageInput, _ ...request.Option) (*awssqs.ReceiveMessageOutput, error) {
+	f.once.Do(func() { close(f.entered) })
+	<-ctx.Done()
+	select {
+	case f.ctxErr <- ctx.Err():
+	default:
+	}
+	return nil, ctx.Err()
+}
+
+// TestStopConsuming_CancelsBlockedReceive verifies StopConsuming cancels the receive
+// context so an in-flight ReceiveMessage unblocks instead of holding shutdown for the
+// full WaitTimeSeconds long-poll.
+func TestStopConsuming_CancelsBlockedReceive(t *testing.T) {
+	fake := &blockingReceiveSQS{entered: make(chan struct{}), ctxErr: make(chan error, 1)}
+	broker := sqs.NewTestBrokerWithService(fake)
+
+	localCnf := *cnf
+	localCnf.ResultBackend = "eager"
+	server, err := machinery.NewServer(&localCnf)
+	require.NoError(t, err)
+	wk := server.NewWorker("cancel-worker", 0)
+
+	go broker.StartConsuming("cancel-tag", newTestV2Pool(1), wk) //nolint:errcheck // test, return value not needed
+
+	select {
+	case <-fake.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ReceiveMessage was never entered")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		broker.StopConsuming()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("StopConsuming did not return; blocked receive was not cancelled")
+	}
+
+	select {
+	case err := <-fake.ctxErr:
+		require.ErrorIs(t, err, context.Canceled)
+	default:
+		t.Fatal("receive did not observe a cancelled context")
+	}
+}
+
+// deadlineCaptureSQS records whether deleteOne bounded its SQS call with a deadline.
+type deadlineCaptureSQS struct {
+	sqs.FakeSQS
+	deleteHadDeadline bool
+}
+
+func (f *deadlineCaptureSQS) DeleteMessageWithContext(ctx aws.Context, _ *awssqs.DeleteMessageInput, _ ...request.Option) (*awssqs.DeleteMessageOutput, error) {
+	_, f.deleteHadDeadline = ctx.Deadline()
+	return &awssqs.DeleteMessageOutput{}, nil
+}
+
+// TestDeleteOne_UsesBoundedContext verifies deleteOne bounds its SQS call with a deadline.
+// The at-threshold undecodable message drives the decode-failure delete path.
+func TestDeleteOne_UsesBoundedContext(t *testing.T) {
+	fakeSvc := &deadlineCaptureSQS{}
+	broker := sqs.NewTestBrokerWithService(fakeSvc)
+
+	err := broker.ConsumeOneForTest(invalidJSONMessage("15"), nil)
+	require.NoError(t, err)
+	assert.True(t, fakeSvc.deleteHadDeadline, "deleteOne must bound its SQS call with a deadline")
 }
 
 func TestPrivateFunc_consumeWithConcurrency(t *testing.T) {

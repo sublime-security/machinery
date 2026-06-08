@@ -24,6 +24,10 @@ const (
 	// message is deleted. Set above the default DLQ threshold (10) so that
 	// queues with a DLQ still route there first.
 	decodeFailureDeleteThreshold int64 = 15
+	// lifecycleCallTimeout bounds post-receive calls (delete, DLQ, retry) so a wedged
+	// request can't pin a concurrency slot for the container's life and starve the pool.
+	// 30s clears the azcore retry budget (~9s) and stays under the visibility timeout.
+	lifecycleCallTimeout = 30 * time.Second
 )
 
 type queueClient interface {
@@ -45,6 +49,11 @@ type Broker struct {
 	dlqClient         queueClient   // nil ⇒ DLQ disabled
 	maxReceives       int64
 	dlqTTL            time.Duration
+
+	// consumeCtx is cancelled by StopConsuming so an in-flight DequeueMessage returns
+	// at once and shutdown stops pulling work it can't finish in the ~30s grace.
+	consumeCtx    context.Context
+	cancelConsume context.CancelFunc
 }
 
 // New creates new Broker instance
@@ -76,6 +85,7 @@ var badRequestErrRegex = regexp.MustCompile(`4\d\d`)
 func (b *Broker) StartConsuming(consumerTag string, concurrency iface.ResizeablePool, taskProcessor iface.TaskProcessor) (bool, error) {
 	b.Broker.StartConsuming(consumerTag, taskProcessor)
 
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
 	b.stopReceivingChan = make(chan int)
 	b.receivingWG.Add(1)
 
@@ -108,15 +118,16 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 						b.processingWG.Done()
 					}()
 				} else {
-					if err != nil {
+					if err != nil && b.consumeCtx.Err() == nil {
 						log.ERROR.Printf("Queue consume error on %s: %s", b.queueName, err)
 						if badRequestErrRegex.MatchString(err.Error()) {
 							time.Sleep(30 * time.Second)
 						}
-					} else {
+					} else if err == nil {
 						// No messages, prevent fast looping
 						time.Sleep(100 * time.Millisecond)
 					}
+					// On shutdown cancellation, skip the log; the next pass takes stopReceivingChan.
 					token.Return()
 				}
 			}
@@ -143,16 +154,16 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 				if err == nil && len(output.Messages) > 0 {
 					deliveries <- output
 				} else {
-					if err != nil {
+					if err != nil && b.consumeCtx.Err() == nil {
 						log.ERROR.Printf("Queue consume error on %s: %s", b.queueName, err)
 						if badRequestErrRegex.MatchString(err.Error()) {
 							time.Sleep(30 * time.Second)
 						}
-					} else {
+					} else if err == nil {
 						// No messages, prevent fast looping
 						time.Sleep(100 * time.Millisecond)
 					}
-					// return back to pool right away
+					// On shutdown cancellation, skip the log; the next pass takes stopReceivingChan.
 					concurrency.Return()
 				}
 			}
@@ -169,6 +180,11 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 // StopConsuming quits the loop
 func (b *Broker) StopConsuming() {
 	b.Broker.StopConsuming()
+
+	// Cancel before signalling stop so an in-flight DequeueMessage unblocks and the loop sees stopReceivingChan.
+	if b.cancelConsume != nil {
+		b.cancelConsume()
+	}
 
 	b.stopReceiving()
 
@@ -244,8 +260,11 @@ func (b *Broker) RetryMessage(signature *tasks.Signature) {
 
 	delayS := int32(signature.Delay.Seconds())
 
+	// On timeout the message redelivers on its existing visibility timeout rather than this backoff.
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleCallTimeout)
+	defer cancel()
 	_, err := b.newQueueClient(signature.RoutingKey).UpdateMessage(
-		context.Background(),
+		ctx,
 		signature.AzureMessageID,
 		signature.AzurePopReceipt,
 		signature.AzureMessageContent,
@@ -368,9 +387,12 @@ func (b *Broker) consumeOne(delivery azqueue.DequeueMessagesResponse, taskProces
 
 // dlqOne enqueues a message to the configured DLQ.
 func (b *Broker) dlqOne(msg *azqueue.DequeuedMessage) error {
+	// On timeout the message stays on the source queue and is retried.
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleCallTimeout)
+	defer cancel()
 	ttlSeconds := int32(b.dlqTTL.Seconds())
 	_, err := b.dlqClient.EnqueueMessage(
-		context.Background(),
+		ctx,
 		*msg.MessageText,
 		&azqueue.EnqueueMessageOptions{TimeToLive: &ttlSeconds},
 	)
@@ -379,7 +401,10 @@ func (b *Broker) dlqOne(msg *azqueue.DequeuedMessage) error {
 
 // deleteOne is a method delete a delivery from AWS SQS
 func (b *Broker) deleteOne(message *azqueue.DequeuedMessage) error {
-	_, err := b.newQueueClient(b.queueName).DeleteMessage(context.Background(), *message.MessageID, *message.PopReceipt, nil)
+	// On timeout the completed task's message redelivers after its visibility timeout — at-least-once tolerates it.
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleCallTimeout)
+	defer cancel()
+	_, err := b.newQueueClient(b.queueName).DeleteMessage(ctx, *message.MessageID, *message.PopReceipt, nil)
 	if err != nil {
 		return err
 	}
@@ -388,8 +413,13 @@ func (b *Broker) deleteOne(message *azqueue.DequeuedMessage) error {
 
 // receiveMessage is a method receives a message from specified queue url
 func (b *Broker) receiveMessage() (azqueue.DequeueMessagesResponse, error) {
+	// consumeCtx is nil only when receiveMessage is called outside StartConsuming (e.g. tests).
+	ctx := b.consumeCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	visibilityTimeoutS := int32(b.cfg.VisibilityTimeout.Seconds())
-	result, err := b.newQueueClient(b.queueName).DequeueMessage(context.Background(), &azqueue.DequeueMessageOptions{VisibilityTimeout: &visibilityTimeoutS})
+	result, err := b.newQueueClient(b.queueName).DequeueMessage(ctx, &azqueue.DequeueMessageOptions{VisibilityTimeout: &visibilityTimeoutS})
 	if err != nil {
 		return azqueue.DequeueMessagesResponse{}, err
 	}

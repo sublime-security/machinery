@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 
@@ -39,8 +40,16 @@ func (f *FakeSQS) ReceiveMessage(*awssqs.ReceiveMessageInput) (*awssqs.ReceiveMe
 	return ReceiveMessageOutput, nil
 }
 
+func (f *FakeSQS) ReceiveMessageWithContext(_ aws.Context, in *awssqs.ReceiveMessageInput, _ ...request.Option) (*awssqs.ReceiveMessageOutput, error) {
+	return f.ReceiveMessage(in)
+}
+
 func (f *FakeSQS) DeleteMessage(*awssqs.DeleteMessageInput) (*awssqs.DeleteMessageOutput, error) {
 	return &awssqs.DeleteMessageOutput{}, nil
+}
+
+func (f *FakeSQS) DeleteMessageWithContext(_ aws.Context, in *awssqs.DeleteMessageInput, _ ...request.Option) (*awssqs.DeleteMessageOutput, error) {
+	return f.DeleteMessage(in)
 }
 
 type ErrorSQS struct {
@@ -57,9 +66,17 @@ func (e *ErrorSQS) ReceiveMessage(*awssqs.ReceiveMessageInput) (*awssqs.ReceiveM
 	return nil, err
 }
 
+func (e *ErrorSQS) ReceiveMessageWithContext(_ aws.Context, in *awssqs.ReceiveMessageInput, _ ...request.Option) (*awssqs.ReceiveMessageOutput, error) {
+	return e.ReceiveMessage(in)
+}
+
 func (e *ErrorSQS) DeleteMessage(*awssqs.DeleteMessageInput) (*awssqs.DeleteMessageOutput, error) {
 	err := errors.New("this is an error")
 	return nil, err
+}
+
+func (e *ErrorSQS) DeleteMessageWithContext(_ aws.Context, in *awssqs.DeleteMessageInput, _ ...request.Option) (*awssqs.DeleteMessageOutput, error) {
+	return e.DeleteMessage(in)
 }
 
 func init() {
