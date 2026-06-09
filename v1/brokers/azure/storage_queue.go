@@ -264,7 +264,7 @@ func (b *Broker) RetryMessage(signature *tasks.Signature) {
 
 	delayS := int32(signature.Delay.Seconds())
 
-	// On timeout the message redelivers on its existing visibility timeout rather than this backoff.
+	// If this call times out, the message redelivers on its existing visibility timeout rather than this backoff.
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleCallTimeout)
 	defer cancel()
 	_, err := b.newQueueClient(signature.RoutingKey).UpdateMessage(
@@ -391,7 +391,7 @@ func (b *Broker) consumeOne(delivery azqueue.DequeueMessagesResponse, taskProces
 
 // dlqOne enqueues a message to the configured DLQ.
 func (b *Broker) dlqOne(msg *azqueue.DequeuedMessage) error {
-	// On timeout the message stays on the source queue and is retried.
+	// If this call times out, the message stays on the source queue and is retried.
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleCallTimeout)
 	defer cancel()
 	ttlSeconds := int32(b.dlqTTL.Seconds())
@@ -405,7 +405,8 @@ func (b *Broker) dlqOne(msg *azqueue.DequeuedMessage) error {
 
 // deleteOne is a method delete a delivery from AWS SQS
 func (b *Broker) deleteOne(message *azqueue.DequeuedMessage) error {
-	// On timeout the completed task's message redelivers after its visibility timeout — at-least-once tolerates it.
+	// If this call times out, the completed task's message redelivers — callers must already
+	// tolerate reprocessing, since the queue doesn't guarantee exactly-once delivery.
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleCallTimeout)
 	defer cancel()
 	_, err := b.newQueueClient(b.queueName).DeleteMessage(ctx, *message.MessageID, *message.PopReceipt, nil)
