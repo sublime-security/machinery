@@ -136,15 +136,16 @@ func NewTestBroker() *Broker {
 	}))
 
 	svc := new(FakeSQS)
-	return &Broker{
+	b := &Broker{
 		Broker:            common.NewBroker(cnf),
 		sess:              sess,
 		service:           svc,
 		processingWG:      sync.WaitGroup{},
 		receivingWG:       sync.WaitGroup{},
 		stopReceivingChan: make(chan int),
-		consumeCtx:        context.Background(),
 	}
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
+	return b
 }
 
 func NewTestBrokerWithService(service sqsiface.SQSAPI) *Broker {
@@ -152,15 +153,16 @@ func NewTestBrokerWithService(service sqsiface.SQSAPI) *Broker {
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	}))
-	return &Broker{
+	b := &Broker{
 		Broker:            common.NewBroker(cnf),
 		sess:              sess,
 		service:           service,
 		processingWG:      sync.WaitGroup{},
 		receivingWG:       sync.WaitGroup{},
 		stopReceivingChan: make(chan int),
-		consumeCtx:        context.Background(),
 	}
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
+	return b
 }
 
 func NewTestErrorBroker() *Broker {
@@ -171,15 +173,16 @@ func NewTestErrorBroker() *Broker {
 	}))
 
 	errSvc := new(ErrorSQS)
-	return &Broker{
+	b := &Broker{
 		Broker:            common.NewBroker(cnf),
 		sess:              sess,
 		service:           errSvc,
 		processingWG:      sync.WaitGroup{},
 		receivingWG:       sync.WaitGroup{},
 		stopReceivingChan: make(chan int),
-		consumeCtx:        context.Background(),
 	}
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
+	return b
 }
 
 func (b *Broker) ConsumeForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool) error {

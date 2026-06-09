@@ -16,7 +16,7 @@ func NewTestBroker() *Broker {
 		DefaultQueue: "test_queue",
 		Azure:        &config.AzureConfig{},
 	}
-	return &Broker{
+	b := &Broker{
 		Broker:            common.NewBroker(cnf),
 		processingWG:      sync.WaitGroup{},
 		receivingWG:       sync.WaitGroup{},
@@ -24,8 +24,9 @@ func NewTestBroker() *Broker {
 		cfg:               *cnf.Azure,
 		queueName:         cnf.DefaultQueue,
 		newQueueClient:    func(name string) queueClient { return nil },
-		consumeCtx:        context.Background(),
 	}
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
+	return b
 }
 
 func (b *Broker) SetQueueClientFactoryForTest(fn func(string) queueClient) {

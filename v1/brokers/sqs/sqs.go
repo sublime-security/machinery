@@ -35,8 +35,12 @@ const (
 	maxReceiveCountBeforeDelete = 15
 	// lifecycleCallTimeout bounds post-receive calls (delete, retry) so a wedged request
 	// can't pin a concurrency slot for the container's life and starve the pool. 30s clears
-	// the SDK retry budget; receive is excluded — it long-polls for WaitTimeSeconds.
+	// the SDK retry budget.
 	lifecycleCallTimeout = 30 * time.Second
+	// receiveCallTimeout bounds a wedged ReceiveMessage. It must exceed the WaitTimeSeconds
+	// long-poll (max 20s) so normal polls aren't cut short; derived from consumeCtx, so
+	// shutdown still cancels it at once.
+	receiveCallTimeout = 30 * time.Second
 )
 
 // Broker represents a AWS SQS broker
@@ -59,8 +63,8 @@ type Broker struct {
 // New creates new Broker instance
 func New(cnf *config.Config) iface.Broker {
 	b := &Broker{Broker: common.NewBroker(cnf)}
-	// StartConsuming replaces this with a cancellable context.
-	b.consumeCtx = context.Background()
+	// StartConsuming replaces this with the per-session cancellable context.
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
 	if cnf.SQS != nil && cnf.SQS.Client != nil {
 		// Use provided *SQS client
 		b.service = cnf.SQS.Client
@@ -85,6 +89,8 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 	b.queueUrl = qURL
 
 	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
+	// Release the context on every return path; StopConsuming also cancels eagerly to unblock an in-flight receive.
+	defer b.cancelConsume()
 	b.stopReceivingChan = make(chan int)
 	b.receivingWG.Add(1)
 
@@ -108,11 +114,13 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 				return b.GetRetry(), workerError
 			case <-b.stopReceivingChan:
 				return false, nil
+			case <-b.consumeCtx.Done():
+				// Exit on cancellation alone, without relying on a stopReceivingChan signal.
+				return false, nil
 			case token := <-tokenPool:
 				output, err := b.receiveMessage(qURL)
-				// A cancelled consumeCtx surfaces as a receive error, so cancellation before receive always lands here
 				if err != nil {
-					// On a shutdown cancellation, skip logging; the next pass takes the stopReceivingChan case.
+					// Skip the log if cancellation aborted the receive; the consumeCtx.Done() case ends the loop.
 					if b.consumeCtx.Err() == nil {
 						log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
 						if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
@@ -150,11 +158,13 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 			// If someone called b.stopReceivingChannel, they are trying to shut down the process
 			// so we don't want to retry the StartConsuming call
 			return false, nil
+		case <-b.consumeCtx.Done():
+			// Exit on cancellation alone, without relying on a stopReceivingChan signal.
+			return false, nil
 		case <-pool:
 			output, err := b.receiveMessage(qURL)
-			// A cancelled consumeCtx surfaces as a receive error, so cancellation before receive always lands here
 			if err != nil {
-				// On a shutdown cancellation, skip logging; the next pass takes the stopReceivingChan case.
+				// Skip the log if cancellation aborted the receive; the consumeCtx.Done() case ends the loop.
 				if b.consumeCtx.Err() == nil {
 					log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
 
@@ -191,9 +201,7 @@ func (b *Broker) StopConsuming() {
 	b.Broker.StopConsuming()
 
 	// Cancel before signalling stop so the in-flight ReceiveMessage long-poll unblocks and the loop sees stopReceivingChan.
-	if b.cancelConsume != nil {
-		b.cancelConsume()
-	}
+	b.cancelConsume()
 
 	b.stopReceiving()
 
@@ -465,8 +473,10 @@ func (b *Broker) receiveMessage(qURL *string) (*awssqs.ReceiveMessageOutput, err
 	if visibilityTimeout != nil {
 		input.VisibilityTimeout = aws.Int64(int64(*visibilityTimeout))
 	}
+	ctx, cancel := context.WithTimeout(b.consumeCtx, receiveCallTimeout)
+	defer cancel()
 	start := time.Now()
-	result, err := b.service.ReceiveMessageWithContext(b.consumeCtx, input)
+	result, err := b.service.ReceiveMessageWithContext(ctx, input)
 	if rand.Float64() < logSQSReceiveSampleRate {
 		messageID := "unknown"
 		if err == nil && len(result.Messages) > 0 {
@@ -508,10 +518,13 @@ func (b *Broker) continueReceivingMessages(qURL *string, deliveries chan *awssqs
 	return true, nil
 }
 
-// stopReceiving is a method sending a signal to stopReceivingChan
+// stopReceiving signals the receive loop to stop. The consumeCtx.Done() case keeps
+// this from blocking if the loop already exited on cancellation.
 func (b *Broker) stopReceiving() {
-	// Stop the receiving goroutine
-	b.stopReceivingChan <- 1
+	select {
+	case b.stopReceivingChan <- 1:
+	case <-b.consumeCtx.Done():
+	}
 }
 
 // getQueueURL is a method returns that returns queueURL first by checking if custom queue was set and usign it

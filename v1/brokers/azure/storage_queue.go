@@ -28,6 +28,9 @@ const (
 	// request can't pin a concurrency slot for the container's life and starve the pool.
 	// 30s clears the azcore retry budget (~9s) and stays under the visibility timeout.
 	lifecycleCallTimeout = 30 * time.Second
+	// receiveCallTimeout bounds a wedged DequeueMessage so a hung receive can't hold a
+	// concurrency slot. Derived from consumeCtx, so shutdown still cancels it at once.
+	receiveCallTimeout = 30 * time.Second
 )
 
 type queueClient interface {
@@ -59,8 +62,8 @@ type Broker struct {
 // New creates new Broker instance
 func New(cnf *config.Config) iface.Broker {
 	b := &Broker{Broker: common.NewBroker(cnf)}
-	// StartConsuming replaces this with a cancellable context.
-	b.consumeCtx = context.Background()
+	// StartConsuming replaces this with the per-session cancellable context.
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
 	b.cfg = *cnf.Azure
 	b.queueName = cnf.DefaultQueue
 	b.newQueueClient = func(name string) queueClient {
@@ -88,6 +91,8 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 	b.Broker.StartConsuming(consumerTag, taskProcessor)
 
 	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
+	// Release the context on every return path; StopConsuming also cancels eagerly to unblock an in-flight receive.
+	defer b.cancelConsume()
 	b.stopReceivingChan = make(chan int)
 	b.receivingWG.Add(1)
 
@@ -107,6 +112,9 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 			case workerError := <-errorsChan:
 				return b.GetRetry(), workerError
 			case <-b.stopReceivingChan:
+				return false, nil
+			case <-b.consumeCtx.Done():
+				// Exit on cancellation alone, without relying on a stopReceivingChan signal.
 				return false, nil
 			case token := <-tokenPool:
 				output, err := b.receiveMessage()
@@ -130,7 +138,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 						// No messages, prevent fast looping
 						time.Sleep(100 * time.Millisecond)
 					}
-					// On shutdown cancellation, skip the log; the next pass takes stopReceivingChan.
+					// On shutdown cancellation, skip the log; the next pass takes the consumeCtx.Done() case.
 					token.Return()
 				}
 			}
@@ -152,6 +160,11 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 				close(deliveries)
 
 				return
+			case <-b.consumeCtx.Done():
+				// Exit on cancellation alone, without relying on a stopReceivingChan signal.
+				close(deliveries)
+
+				return
 			case <-pool:
 				output, err := b.receiveMessage()
 				if err == nil && len(output.Messages) > 0 {
@@ -167,7 +180,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 						// No messages, prevent fast looping
 						time.Sleep(100 * time.Millisecond)
 					}
-					// On shutdown cancellation, skip the log; the next pass takes stopReceivingChan.
+					// On shutdown cancellation, skip the log; the next pass takes the consumeCtx.Done() case.
 					concurrency.Return()
 				}
 			}
@@ -186,9 +199,7 @@ func (b *Broker) StopConsuming() {
 	b.Broker.StopConsuming()
 
 	// Cancel before signalling stop so an in-flight DequeueMessage unblocks and the loop sees stopReceivingChan.
-	if b.cancelConsume != nil {
-		b.cancelConsume()
-	}
+	b.cancelConsume()
 
 	b.stopReceiving()
 
@@ -418,8 +429,10 @@ func (b *Broker) deleteOne(message *azqueue.DequeuedMessage) error {
 
 // receiveMessage is a method receives a message from specified queue url
 func (b *Broker) receiveMessage() (azqueue.DequeueMessagesResponse, error) {
+	ctx, cancel := context.WithTimeout(b.consumeCtx, receiveCallTimeout)
+	defer cancel()
 	visibilityTimeoutS := int32(b.cfg.VisibilityTimeout.Seconds())
-	result, err := b.newQueueClient(b.queueName).DequeueMessage(b.consumeCtx, &azqueue.DequeueMessageOptions{VisibilityTimeout: &visibilityTimeoutS})
+	result, err := b.newQueueClient(b.queueName).DequeueMessage(ctx, &azqueue.DequeueMessageOptions{VisibilityTimeout: &visibilityTimeoutS})
 	if err != nil {
 		return azqueue.DequeueMessagesResponse{}, err
 	}
@@ -461,8 +474,11 @@ func (b *Broker) consumeDeliveries(deliveries <-chan azqueue.DequeueMessagesResp
 	return true, nil
 }
 
-// stopReceiving is a method sending a signal to stopReceivingChan
+// stopReceiving signals the receive loop to stop. The consumeCtx.Done() case keeps
+// this from blocking if the loop already exited on cancellation.
 func (b *Broker) stopReceiving() {
-	// Stop the receiving goroutine
-	b.stopReceivingChan <- 1
+	select {
+	case b.stopReceivingChan <- 1:
+	case <-b.consumeCtx.Done():
+	}
 }
