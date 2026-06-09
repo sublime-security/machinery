@@ -216,6 +216,25 @@ func TestStopConsuming_CancelsBlockedReceive(t *testing.T) {
 	}
 }
 
+// TestDeleteOne_UsesBoundedContext verifies deleteOne bounds its DeleteMessage call with a
+// deadline. The undecodable message at DequeueCount 15 drives the decode-failure delete path.
+func TestDeleteOne_UsesBoundedContext(t *testing.T) {
+	var deleteHadDeadline bool
+	client := &azure.MockClient{
+		DeleteFunc: func(ctx context.Context, _, _ string, _ *azqueue.DeleteMessageOptions) (azqueue.DeleteMessageResponse, error) {
+			_, deleteHadDeadline = ctx.Deadline()
+			return azqueue.DeleteMessageResponse{}, nil
+		},
+	}
+
+	broker := azure.NewTestBroker()
+	broker.SetMockClientForTest(client)
+
+	err := broker.ConsumeOneForTest(dlqTestDelivery(15, "not valid json"), nil)
+	require.NoError(t, err)
+	assert.True(t, deleteHadDeadline, "deleteOne must bound its DeleteMessage call with a deadline")
+}
+
 // dlqTestDelivery builds a single-message DequeueMessagesResponse for DLQ tests.
 func dlqTestDelivery(dequeueCount int64, body string) azqueue.DequeueMessagesResponse {
 	msgID := "test-msg-id"
