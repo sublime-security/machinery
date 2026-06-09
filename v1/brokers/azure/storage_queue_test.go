@@ -3,6 +3,7 @@ package azure_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -155,6 +156,83 @@ func TestStartConsuming_V1_ProcessesTask(t *testing.T) {
 
 func TestStartConsuming_V2_ProcessesTask(t *testing.T) {
 	testStartConsumingProcessesTask(t, newTestV2Pool(1))
+}
+
+// TestStopConsuming_CancelsBlockedReceive verifies StopConsuming cancels the receive
+// context so an in-flight DequeueMessage unblocks instead of holding shutdown until the
+// call returns on its own.
+func TestStopConsuming_CancelsBlockedReceive(t *testing.T) {
+	entered := make(chan struct{})
+	ctxErr := make(chan error, 1)
+	var once sync.Once
+	client := &azure.MockClient{
+		DequeueFunc: func(ctx context.Context, _ *azqueue.DequeueMessageOptions) (azqueue.DequeueMessagesResponse, error) {
+			once.Do(func() { close(entered) })
+			<-ctx.Done()
+			select {
+			case ctxErr <- ctx.Err():
+			default:
+			}
+			return azqueue.DequeueMessagesResponse{}, ctx.Err()
+		},
+	}
+
+	broker := azure.NewTestBroker()
+	broker.SetMockClientForTest(client)
+
+	server, err := machinery.NewServer(&config.Config{
+		Broker:        "eager",
+		DefaultQueue:  "test_queue",
+		ResultBackend: "eager",
+	})
+	require.NoError(t, err)
+	wk := server.NewWorker("cancel-worker", 0)
+
+	go broker.StartConsuming("cancel-tag", newTestV2Pool(1), wk) //nolint:errcheck // test, return value not needed
+
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("DequeueMessage was never entered")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		broker.StopConsuming()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("StopConsuming did not return; blocked dequeue was not cancelled")
+	}
+
+	select {
+	case err := <-ctxErr:
+		require.ErrorIs(t, err, context.Canceled)
+	default:
+		t.Fatal("dequeue did not observe a cancelled context")
+	}
+}
+
+// TestDeleteOne_UsesBoundedContext verifies deleteOne bounds its DeleteMessage call with a
+// deadline. The undecodable message at DequeueCount 15 drives the decode-failure delete path.
+func TestDeleteOne_UsesBoundedContext(t *testing.T) {
+	var deleteHadDeadline bool
+	client := &azure.MockClient{
+		DeleteFunc: func(ctx context.Context, _, _ string, _ *azqueue.DeleteMessageOptions) (azqueue.DeleteMessageResponse, error) {
+			_, deleteHadDeadline = ctx.Deadline()
+			return azqueue.DeleteMessageResponse{}, nil
+		},
+	}
+
+	broker := azure.NewTestBroker()
+	broker.SetMockClientForTest(client)
+
+	err := broker.ConsumeOneForTest(dlqTestDelivery(15, "not valid json"), nil)
+	require.NoError(t, err)
+	assert.True(t, deleteHadDeadline, "deleteOne must bound its DeleteMessage call with a deadline")
 }
 
 // dlqTestDelivery builds a single-message DequeueMessagesResponse for DLQ tests.

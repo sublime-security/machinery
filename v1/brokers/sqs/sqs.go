@@ -33,6 +33,14 @@ const (
 	// undecodable message is deleted. Set above our standard DLQ threshold (10) so
 	// that queues with a DLQ still route there first.
 	maxReceiveCountBeforeDelete = 15
+	// lifecycleCallTimeout bounds post-receive calls (delete, retry) so a wedged request
+	// can't pin a concurrency slot for the container's life and starve the pool. 30s clears
+	// the SDK retry budget.
+	lifecycleCallTimeout = 30 * time.Second
+	// receiveCallTimeout bounds a wedged ReceiveMessage. It must exceed the WaitTimeSeconds
+	// long-poll (max 20s) so normal polls aren't cut short; derived from consumeCtx, so
+	// shutdown still cancels it at once.
+	receiveCallTimeout = 30 * time.Second
 )
 
 // Broker represents a AWS SQS broker
@@ -45,11 +53,18 @@ type Broker struct {
 	sess              *session.Session
 	service           sqsiface.SQSAPI
 	queueUrl          *string
+
+	// consumeCtx is cancelled by StopConsuming so an in-flight ReceiveMessage returns
+	// at once instead of holding the loop for the full WaitTimeSeconds long-poll.
+	consumeCtx    context.Context
+	cancelConsume context.CancelFunc
 }
 
 // New creates new Broker instance
 func New(cnf *config.Config) iface.Broker {
 	b := &Broker{Broker: common.NewBroker(cnf)}
+	// StartConsuming replaces this with the per-session cancellable context.
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
 	if cnf.SQS != nil && cnf.SQS.Client != nil {
 		// Use provided *SQS client
 		b.service = cnf.SQS.Client
@@ -73,6 +88,9 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 	//save it so that it can be used later when attempting to delete task
 	b.queueUrl = qURL
 
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
+	// Release the context on every return path; StopConsuming also cancels eagerly to unblock an in-flight receive.
+	defer b.cancelConsume()
 	b.stopReceivingChan = make(chan int)
 	b.receivingWG.Add(1)
 
@@ -96,12 +114,18 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 				return b.GetRetry(), workerError
 			case <-b.stopReceivingChan:
 				return false, nil
+			case <-b.consumeCtx.Done():
+				// Exit on cancellation alone, without relying on a stopReceivingChan signal.
+				return false, nil
 			case token := <-tokenPool:
 				output, err := b.receiveMessage(qURL)
 				if err != nil {
-					log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
-					if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
-						time.Sleep(30 * time.Second)
+					// Skip the log if cancellation aborted the receive; the consumeCtx.Done() case ends the loop.
+					if b.consumeCtx.Err() == nil {
+						log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
+						if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
+							time.Sleep(30 * time.Second)
+						}
 					}
 					token.Return()
 				} else if len(output.Messages) == 0 {
@@ -134,14 +158,20 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 			// If someone called b.stopReceivingChannel, they are trying to shut down the process
 			// so we don't want to retry the StartConsuming call
 			return false, nil
+		case <-b.consumeCtx.Done():
+			// Exit on cancellation alone, without relying on a stopReceivingChan signal.
+			return false, nil
 		case <-pool:
 			output, err := b.receiveMessage(qURL)
 			if err != nil {
-				log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
+				// Skip the log if cancellation aborted the receive; the consumeCtx.Done() case ends the loop.
+				if b.consumeCtx.Err() == nil {
+					log.ERROR.Printf("Queue consume error on %s: %s", *qURL, err)
 
-				// Avoid repeating this
-				if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
-					time.Sleep(30 * time.Second)
+					// Avoid repeating this
+					if strings.Contains(err.Error(), "AWS.SimpleQueueService.NonExistentQueue") {
+						time.Sleep(30 * time.Second)
+					}
 				}
 				//return back to pool right away
 				concurrency.Return()
@@ -169,6 +199,9 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 // StopConsuming quits the loop
 func (b *Broker) StopConsuming() {
 	b.Broker.StopConsuming()
+
+	// Cancel before signalling stop so the in-flight ReceiveMessage long-poll unblocks and the loop sees stopReceivingChan.
+	b.cancelConsume()
 
 	b.stopReceiving()
 
@@ -256,7 +289,10 @@ func (b *Broker) RetryMessage(signature *tasks.Signature) {
 		VisibilityTimeout: aws.Int64(int64(signature.Delay.Seconds())),
 	}
 
-	_, err := b.service.ChangeMessageVisibility(visibilityInput)
+	// If this call times out, the message redelivers on its existing visibility timeout rather than this backoff.
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleCallTimeout)
+	defer cancel()
+	_, err := b.service.ChangeMessageVisibilityWithContext(ctx, visibilityInput)
 	if err != nil {
 		log.ERROR.Printf("ignoring error attempting to change visibility timeout. will re-attempt after default period. task %s (%s)", signature.UUID, signature.Name)
 	}
@@ -386,7 +422,11 @@ func (b *Broker) consumeOne(delivery *awssqs.ReceiveMessageOutput, taskProcessor
 // deleteOne is a method delete a delivery from AWS SQS
 func (b *Broker) deleteOne(delivery *awssqs.ReceiveMessageOutput) error {
 	qURL := b.defaultQueueURL()
-	_, err := b.service.DeleteMessage(&awssqs.DeleteMessageInput{
+	// If this call times out, the completed task's message redelivers — callers must already
+	// tolerate reprocessing, since the queue doesn't guarantee exactly-once delivery.
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleCallTimeout)
+	defer cancel()
+	_, err := b.service.DeleteMessageWithContext(ctx, &awssqs.DeleteMessageInput{
 		QueueUrl:      qURL,
 		ReceiptHandle: delivery.Messages[0].ReceiptHandle,
 	})
@@ -433,8 +473,10 @@ func (b *Broker) receiveMessage(qURL *string) (*awssqs.ReceiveMessageOutput, err
 	if visibilityTimeout != nil {
 		input.VisibilityTimeout = aws.Int64(int64(*visibilityTimeout))
 	}
+	ctx, cancel := context.WithTimeout(b.consumeCtx, receiveCallTimeout)
+	defer cancel()
 	start := time.Now()
-	result, err := b.service.ReceiveMessage(input)
+	result, err := b.service.ReceiveMessageWithContext(ctx, input)
 	if rand.Float64() < logSQSReceiveSampleRate {
 		messageID := "unknown"
 		if err == nil && len(result.Messages) > 0 {
@@ -476,10 +518,13 @@ func (b *Broker) continueReceivingMessages(qURL *string, deliveries chan *awssqs
 	return true, nil
 }
 
-// stopReceiving is a method sending a signal to stopReceivingChan
+// stopReceiving signals the receive loop to stop. The consumeCtx.Done() case keeps
+// this from blocking if the loop already exited on cancellation.
 func (b *Broker) stopReceiving() {
-	// Stop the receiving goroutine
-	b.stopReceivingChan <- 1
+	select {
+	case b.stopReceivingChan <- 1:
+	case <-b.consumeCtx.Done():
+	}
 }
 
 // getQueueURL is a method returns that returns queueURL first by checking if custom queue was set and usign it

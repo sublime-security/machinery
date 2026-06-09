@@ -1,6 +1,7 @@
 package sqs
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 
@@ -39,8 +41,16 @@ func (f *FakeSQS) ReceiveMessage(*awssqs.ReceiveMessageInput) (*awssqs.ReceiveMe
 	return ReceiveMessageOutput, nil
 }
 
+func (f *FakeSQS) ReceiveMessageWithContext(_ aws.Context, in *awssqs.ReceiveMessageInput, _ ...request.Option) (*awssqs.ReceiveMessageOutput, error) {
+	return f.ReceiveMessage(in)
+}
+
 func (f *FakeSQS) DeleteMessage(*awssqs.DeleteMessageInput) (*awssqs.DeleteMessageOutput, error) {
 	return &awssqs.DeleteMessageOutput{}, nil
+}
+
+func (f *FakeSQS) DeleteMessageWithContext(_ aws.Context, in *awssqs.DeleteMessageInput, _ ...request.Option) (*awssqs.DeleteMessageOutput, error) {
+	return f.DeleteMessage(in)
 }
 
 type ErrorSQS struct {
@@ -57,9 +67,17 @@ func (e *ErrorSQS) ReceiveMessage(*awssqs.ReceiveMessageInput) (*awssqs.ReceiveM
 	return nil, err
 }
 
+func (e *ErrorSQS) ReceiveMessageWithContext(_ aws.Context, in *awssqs.ReceiveMessageInput, _ ...request.Option) (*awssqs.ReceiveMessageOutput, error) {
+	return e.ReceiveMessage(in)
+}
+
 func (e *ErrorSQS) DeleteMessage(*awssqs.DeleteMessageInput) (*awssqs.DeleteMessageOutput, error) {
 	err := errors.New("this is an error")
 	return nil, err
+}
+
+func (e *ErrorSQS) DeleteMessageWithContext(_ aws.Context, in *awssqs.DeleteMessageInput, _ ...request.Option) (*awssqs.DeleteMessageOutput, error) {
+	return e.DeleteMessage(in)
 }
 
 func init() {
@@ -118,7 +136,7 @@ func NewTestBroker() *Broker {
 	}))
 
 	svc := new(FakeSQS)
-	return &Broker{
+	b := &Broker{
 		Broker:            common.NewBroker(cnf),
 		sess:              sess,
 		service:           svc,
@@ -126,6 +144,8 @@ func NewTestBroker() *Broker {
 		receivingWG:       sync.WaitGroup{},
 		stopReceivingChan: make(chan int),
 	}
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
+	return b
 }
 
 func NewTestBrokerWithService(service sqsiface.SQSAPI) *Broker {
@@ -133,7 +153,7 @@ func NewTestBrokerWithService(service sqsiface.SQSAPI) *Broker {
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	}))
-	return &Broker{
+	b := &Broker{
 		Broker:            common.NewBroker(cnf),
 		sess:              sess,
 		service:           service,
@@ -141,6 +161,8 @@ func NewTestBrokerWithService(service sqsiface.SQSAPI) *Broker {
 		receivingWG:       sync.WaitGroup{},
 		stopReceivingChan: make(chan int),
 	}
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
+	return b
 }
 
 func NewTestErrorBroker() *Broker {
@@ -151,7 +173,7 @@ func NewTestErrorBroker() *Broker {
 	}))
 
 	errSvc := new(ErrorSQS)
-	return &Broker{
+	b := &Broker{
 		Broker:            common.NewBroker(cnf),
 		sess:              sess,
 		service:           errSvc,
@@ -159,6 +181,8 @@ func NewTestErrorBroker() *Broker {
 		receivingWG:       sync.WaitGroup{},
 		stopReceivingChan: make(chan int),
 	}
+	b.consumeCtx, b.cancelConsume = context.WithCancel(context.Background())
+	return b
 }
 
 func (b *Broker) ConsumeForTest(deliveries <-chan *awssqs.ReceiveMessageOutput, taskProcessor iface.TaskProcessor, concurrency iface.ResizeablePool) error {
