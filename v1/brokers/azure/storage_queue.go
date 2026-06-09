@@ -120,6 +120,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 						b.processingWG.Done()
 					}()
 				} else {
+					// A cancelled consumeCtx surfaces as a receive error, so b.consumeCtx.Err() != nil implies err != nil.
 					if err != nil && b.consumeCtx.Err() == nil {
 						log.ERROR.Printf("Queue consume error on %s: %s", b.queueName, err)
 						if badRequestErrRegex.MatchString(err.Error()) {

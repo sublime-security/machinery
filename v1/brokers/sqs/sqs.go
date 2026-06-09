@@ -110,6 +110,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 				return false, nil
 			case token := <-tokenPool:
 				output, err := b.receiveMessage(qURL)
+				// A cancelled consumeCtx surfaces as a receive error, so cancellation before receive always lands here
 				if err != nil {
 					// On a shutdown cancellation, skip logging; the next pass takes the stopReceivingChan case.
 					if b.consumeCtx.Err() == nil {
@@ -151,6 +152,7 @@ func (b *Broker) StartConsuming(consumerTag string, concurrency iface.Resizeable
 			return false, nil
 		case <-pool:
 			output, err := b.receiveMessage(qURL)
+			// A cancelled consumeCtx surfaces as a receive error, so cancellation before receive always lands here
 			if err != nil {
 				// On a shutdown cancellation, skip logging; the next pass takes the stopReceivingChan case.
 				if b.consumeCtx.Err() == nil {
