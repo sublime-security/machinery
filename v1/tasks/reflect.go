@@ -175,10 +175,11 @@ func reflectValues(valueType string, value interface{}) (reflect.Value, error) {
 	// Booleans
 	if theType.String() == "[]bool" {
 		bools := reflect.ValueOf(value)
+		elemType := strings.TrimPrefix(theType.String(), "[]")
 
 		theValue = reflect.MakeSlice(theType, bools.Len(), bools.Len())
 		for i := 0; i < bools.Len(); i++ {
-			boolValue, err := getBoolValue(strings.TrimPrefix(theType.String(), "[]"), bools.Index(i).Interface())
+			boolValue, err := getBoolValue(elemType, bools.Index(i).Interface())
 			if err != nil {
 				return reflect.Value{}, err
 			}
@@ -192,10 +193,11 @@ func reflectValues(valueType string, value interface{}) (reflect.Value, error) {
 	// Integers
 	if strings.HasPrefix(theType.String(), "[]int") {
 		ints := reflect.ValueOf(value)
+		elemType := strings.TrimPrefix(theType.String(), "[]")
 
 		theValue = reflect.MakeSlice(theType, ints.Len(), ints.Len())
 		for i := 0; i < ints.Len(); i++ {
-			intValue, err := getIntValue(strings.TrimPrefix(theType.String(), "[]"), ints.Index(i).Interface())
+			intValue, err := getIntValue(elemType, ints.Index(i).Interface())
 			if err != nil {
 				return reflect.Value{}, err
 			}
@@ -221,10 +223,11 @@ func reflectValues(valueType string, value interface{}) (reflect.Value, error) {
 		}
 
 		uints := reflect.ValueOf(value)
+		elemType := strings.TrimPrefix(theType.String(), "[]")
 
 		theValue = reflect.MakeSlice(theType, uints.Len(), uints.Len())
 		for i := 0; i < uints.Len(); i++ {
-			uintValue, err := getUintValue(strings.TrimPrefix(theType.String(), "[]"), uints.Index(i).Interface())
+			uintValue, err := getUintValue(elemType, uints.Index(i).Interface())
 			if err != nil {
 				return reflect.Value{}, err
 			}
@@ -238,10 +241,11 @@ func reflectValues(valueType string, value interface{}) (reflect.Value, error) {
 	// Floating point numbers
 	if strings.HasPrefix(theType.String(), "[]float") {
 		floats := reflect.ValueOf(value)
+		elemType := strings.TrimPrefix(theType.String(), "[]")
 
 		theValue = reflect.MakeSlice(theType, floats.Len(), floats.Len())
 		for i := 0; i < floats.Len(); i++ {
-			floatValue, err := getFloatValue(strings.TrimPrefix(theType.String(), "[]"), floats.Index(i).Interface())
+			floatValue, err := getFloatValue(elemType, floats.Index(i).Interface())
 			if err != nil {
 				return reflect.Value{}, err
 			}
@@ -255,10 +259,11 @@ func reflectValues(valueType string, value interface{}) (reflect.Value, error) {
 	// Strings
 	if theType.String() == "[]string" {
 		strs := reflect.ValueOf(value)
+		elemType := strings.TrimPrefix(theType.String(), "[]")
 
 		theValue = reflect.MakeSlice(theType, strs.Len(), strs.Len())
 		for i := 0; i < strs.Len(); i++ {
-			strValue, err := getStringValue(strings.TrimPrefix(theType.String(), "[]"), strs.Index(i).Interface())
+			strValue, err := getStringValue(elemType, strs.Index(i).Interface())
 			if err != nil {
 				return reflect.Value{}, err
 			}
@@ -272,10 +277,11 @@ func reflectValues(valueType string, value interface{}) (reflect.Value, error) {
 	// Times
 	if theType.String() == "[]time.Time" {
 		strs := reflect.ValueOf(value)
+		elemType := strings.TrimPrefix(theType.String(), "[]")
 
 		theValue = reflect.MakeSlice(theType, strs.Len(), strs.Len())
 		for i := 0; i < strs.Len(); i++ {
-			strValue, err := getTimeValue(strings.TrimPrefix(theType.String(), "[]"), strs.Index(i).Interface())
+			strValue, err := getTimeValue(elemType, strs.Index(i).Interface())
 			if err != nil {
 				return reflect.Value{}, err
 			}
