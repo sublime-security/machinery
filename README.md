@@ -21,6 +21,54 @@ And then update your `replace` statement to be:
 `replace github.com/RichardKnop/machinery => ../../RichardKnop/machinery`
 (and don't push that!)
 
+### Producer stage tracing
+
+`SendTask` records `machinery.backend.duration_ms`, optional
+`machinery.pre_publish.duration_ms`, and `machinery.publish.duration_ms`.
+`machinery.no_backend` identifies signatures that do not request result
+persistence; the backend timing still measures its method call. Failed sends
+are marked with `error` and `machinery.error.phase` (`backend` or `publish`),
+without adding error messages. The producer span is passed through the publish
+context while its existing signature-header propagation is preserved. These
+measurements exclude caller-side work performed before `SendTaskWithContext`.
+
+### SQS publish tracing
+
+SQS `Publish` creates one OpenTracing `sqs.Publish` child of the span in its
+context (or a root if none is present), without adding HTTP or message tracing
+headers. It does not change the client, retries, transport, deadlines or payload.
+The span records only bounded timings/counters, final HTTP status, and error
+phase (`encode`, `input`, or `sdk`) plus a bounded AWS error code; it does not
+record queue URLs, task arguments, addresses or error messages.
+
+- `sqs.encode_ms` measures signature JSON encoding; `sqs.sdk_ms` measures the
+  complete SDK call, including SDK preparation/signing, retries/backoff and
+  response decoding/body reads.
+- `sqs.sdk_send_attempts` counts entered SDK Send handler chains;
+  `sqs.sdk_retries` is the SDK's final retry count (omitted without a
+  completion handler observation). `sqs.send_handlers_completed` counts
+  completed Send chains; their duration is omitted if any chain is incomplete.
+  `sqs.send_handlers_sum_ms` sums Send handler elapsed time across attempts
+  (normally HTTP client `Do`, including connection acquisition). It excludes
+  subsequent SDK response decoding and backoff, but includes any custom Send
+  handlers. It is not total SDK time or pure wire time.
+- `sqs.http.{get_conn,dns,connect,tls}.{started,completed,errors,sum_ms}` describes
+  observed transport callbacks. Phase durations sum completed non-overlapping
+  busy windows across attempts (overlapping dials are not double-counted).
+  Duration is omitted for an unobserved or still-incomplete phase; counts of
+  zero mean no callback observed, not necessarily no underlying work.
+- `sqs.http.{got_connections,reused_connections,idle_connections,idle_sum_ms}`
+  records connection acquisition/reuse and observed idle time.
+  `sqs.http.{wrote_requests,write_errors,first_bytes,send_to_first_byte_sum_ms}`
+  records writes and the elapsed time from SDK Send entry to the first response
+  byte for each observed attempt. These timings overlap connection phases and
+  must not be added together.
+
+Existing `httptrace` hooks are composed. Custom SQS implementations/transports
+that do not invoke SDK handlers or transport callbacks have no corresponding
+observations. State and callback synchronization are constant-size per publish;
+there are no per-attempt or per-phase child spans.
+
 ## Machinery
 
 Machinery is an asynchronous task queue/job queue based on distributed message passing.
