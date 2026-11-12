@@ -102,6 +102,7 @@ func (server *Server) NewWorkerWithCapacity(consumerTag string, capacity brokers
 	}
 }
 
+
 // NewCustomQueueWorker creates Worker instance with Custom Queue
 func (server *Server) NewCustomQueueWorker(consumerTag string, concurrency int, queue string) *Worker {
 	return &Worker{
@@ -211,8 +212,6 @@ func (server *Server) SendTaskWithContext(ctx context.Context, signature *tasks.
 
 	// Make sure result backend is defined
 	if server.backend == nil {
-		span.SetTag("error", true)
-		span.SetTag("machinery.error.phase", "backend")
 		return nil, errors.New("Result backend required")
 	}
 
@@ -225,29 +224,16 @@ func (server *Server) SendTaskWithContext(ctx context.Context, signature *tasks.
 	span.SetTag("signature.name", signature.Name)
 	span.SetTag("signature.uuid", signature.UUID)
 
-	// Measure the backend call even when NoBackend lets it skip persistence.
-	span.SetTag("machinery.no_backend", signature.NoBackend)
-	started := time.Now()
-	err := server.backend.SetStatePending(signature)
-	span.SetTag("machinery.backend.duration_ms", float64(time.Since(started))/float64(time.Millisecond))
-	if err != nil {
-		span.SetTag("error", true)
-		span.SetTag("machinery.error.phase", "backend")
+	// Set initial task state to PENDING
+	if err := server.backend.SetStatePending(signature); err != nil {
 		return nil, fmt.Errorf("Set state pending error: %s", err)
 	}
 
 	if server.prePublishHandler != nil {
-		started = time.Now()
 		server.prePublishHandler(signature)
-		span.SetTag("machinery.pre_publish.duration_ms", float64(time.Since(started))/float64(time.Millisecond))
 	}
 
-	started = time.Now()
-	err = server.broker.Publish(ctx, signature)
-	span.SetTag("machinery.publish.duration_ms", float64(time.Since(started))/float64(time.Millisecond))
-	if err != nil {
-		span.SetTag("error", true)
-		span.SetTag("machinery.error.phase", "publish")
+	if err := server.broker.Publish(ctx, signature); err != nil {
 		return nil, fmt.Errorf("Publish message error: %s", err)
 	}
 

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"net/http/httptrace"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,11 +18,9 @@ import (
 	"github.com/RichardKnop/machinery/v1/log"
 	"github.com/RichardKnop/machinery/v1/tasks"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
 
 	awssqs "github.com/aws/aws-sdk-go/service/sqs"
 )
@@ -217,31 +214,13 @@ func (b *Broker) StopConsuming() {
 }
 
 // Publish places a new message on the default queue
-func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) (publishErr error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "sqs.Publish")
-	ext.SpanKindRPCClient.Set(span)
-	trace := &publishTrace{}
-	phase := "encode"
-	defer func() {
-		if publishErr != nil {
-			ext.Error.Set(span, true)
-			span.SetTag("sqs.error_phase", phase)
-			if awsErr, ok := publishErr.(awserr.Error); ok {
-				span.SetTag("sqs.aws_error_code", boundedAWSErrorCode(awsErr.Code()))
-			}
-		}
-		trace.finish(span)
-		span.Finish()
-	}()
-	encodeStart := time.Now()
+func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error {
 	msg, err := json.Marshal(signature)
-	span.SetTag("sqs.encode_ms", milliseconds(time.Since(encodeStart)))
 	if err != nil {
 		return fmt.Errorf("JSON marshal error: %s", err)
 	}
 
 	// Check that signature.RoutingKey is set, if not switch to DefaultQueue
-	phase = "input"
 	b.AdjustRoutingKey(signature)
 
 	MsgInput := &awssqs.SendMessageInput{
@@ -273,11 +252,10 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) (publi
 		MsgInput.DelaySeconds = aws.Int64(int64(signature.Delay.Seconds()))
 	}
 
-	phase = "sdk"
-	ctx = httptrace.WithClientTrace(ctx, trace.clientTrace())
-	sdkStart := time.Now()
-	result, err := b.service.SendMessageWithContext(ctx, MsgInput, trace.requestOption)
-	span.SetTag("sqs.sdk_ms", milliseconds(time.Since(sdkStart)))
+	span, ctx := opentracing.StartSpanFromContext(ctx, "sqs.SendMessage")
+	result, err := b.service.SendMessageWithContext(ctx, MsgInput)
+	span.SetTag("error", err != nil)
+	span.Finish()
 
 	if err != nil {
 		log.ERROR.Printf("Error when sending a message: %v", err)
