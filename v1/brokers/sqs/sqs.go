@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
+	"github.com/opentracing/opentracing-go"
 
 	awssqs "github.com/aws/aws-sdk-go/service/sqs"
 )
@@ -251,7 +252,10 @@ func (b *Broker) Publish(ctx context.Context, signature *tasks.Signature) error 
 		MsgInput.DelaySeconds = aws.Int64(int64(signature.Delay.Seconds()))
 	}
 
+	span, ctx := opentracing.StartSpanFromContext(ctx, "sqs.SendMessage")
 	result, err := b.service.SendMessageWithContext(ctx, MsgInput)
+	span.SetTag("error", err != nil)
+	span.Finish()
 
 	if err != nil {
 		log.ERROR.Printf("Error when sending a message: %v", err)

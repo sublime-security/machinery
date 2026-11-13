@@ -198,7 +198,7 @@ func (server *Server) GetRegisteredTask(name string) (interface{}, error) {
 
 // SendTaskWithContext will inject the trace context in the signature headers before publishing it
 func (server *Server) SendTaskWithContext(ctx context.Context, signature *tasks.Signature) (*result.AsyncResult, error) {
-	span, _ := opentracing.StartSpanFromContext(ctx, "SendTask", tracing.ProducerOption(), tracing.MachineryTag)
+	span, ctx := opentracing.StartSpanFromContext(ctx, "SendTask", tracing.ProducerOption(), tracing.MachineryTag)
 	defer span.Finish()
 
 	// tag the span with some info about the signature
